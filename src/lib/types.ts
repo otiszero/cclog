@@ -15,8 +15,9 @@ export type SessionEvent =
       text: string;
       toolUses: ToolUseRef[];
       durationMs?: number;
+      raw?: unknown;
     }
-  | { kind: "user_prompt"; ts: string; uuid: string; text: string }
+  | { kind: "user_prompt"; ts: string; uuid: string; text: string; raw?: unknown }
   | {
       kind: "tool_use";
       ts: string;
@@ -25,7 +26,9 @@ export type SessionEvent =
       name: string;
       input: unknown;
       resultPreview?: string;
+      resultFull?: string;
       resultOk?: boolean;
+      raw?: unknown;
     }
   | {
       kind: "sub_agent";

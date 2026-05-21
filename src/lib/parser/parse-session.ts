@@ -40,7 +40,7 @@ export async function parseSession(
           const content = entry.message?.content;
           // user prompt: string content, or content array with text blocks
           if (typeof content === "string") {
-            events.push({ kind: "user_prompt", ts: ts ?? "", uuid: entry.uuid ?? "", text: content });
+            events.push({ kind: "user_prompt", ts: ts ?? "", uuid: entry.uuid ?? "", text: content, raw: entry });
           } else if (Array.isArray(content)) {
             for (const block of content) {
               if (block?.type === "text" && typeof block.text === "string") {
@@ -49,12 +49,14 @@ export async function parseSession(
                   ts: ts ?? "",
                   uuid: entry.uuid ?? "",
                   text: block.text,
+                  raw: entry,
                 });
               } else if (block?.type === "tool_result") {
                 const ref = toolUseById.get(block.tool_use_id);
                 if (ref) {
                   ref.resultOk = block.is_error !== true;
                   ref.resultPreview = stringifyPreview(block.content);
+                  ref.resultFull = stringifyFull(block.content);
                 }
               }
             }
@@ -80,6 +82,7 @@ export async function parseSession(
                   parentTurn: turnUuid,
                   name: block.name ?? "",
                   input: block.input,
+                  raw: block,
                 };
                 events.push(tu);
                 toolUseById.set(tu.uuid, tu);
@@ -115,6 +118,7 @@ export async function parseSession(
             },
             text: textBuf,
             toolUses: toolUseRefs,
+            raw: entry,
           };
           events.push(turn);
           turnByUuid.set(turnUuid, turn);
@@ -151,15 +155,23 @@ export async function parseSession(
 }
 
 function stringifyPreview(content: unknown): string {
-  if (typeof content === "string") return content.slice(0, 400);
+  return stringifyContent(content).slice(0, 400);
+}
+
+const FULL_CAP = 200_000;
+function stringifyFull(content: unknown): string {
+  return stringifyContent(content).slice(0, FULL_CAP);
+}
+
+function stringifyContent(content: unknown): string {
+  if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    const text = content
+    return content
       .map((b) => (typeof b === "object" && b && "text" in b ? (b as { text: string }).text : ""))
       .join("\n");
-    return text.slice(0, 400);
   }
   try {
-    return JSON.stringify(content).slice(0, 400);
+    return JSON.stringify(content, null, 2);
   } catch {
     return "";
   }

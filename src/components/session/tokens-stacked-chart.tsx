@@ -37,7 +37,7 @@ export function TokensStackedChart({
           />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Bar dataKey="cacheRead" stackId="a" fill="#0ea5e9" name="cache-read" />
-          <Bar dataKey="cacheCreate" stackId="a" fill="#6366f1" name="cache-write" />
+          <Bar dataKey="cacheCreate" stackId="a" fill="#6366f1" name="cache-creation" />
           <Bar dataKey="input" stackId="a" fill="var(--warning)" name="input" />
           <Bar dataKey="output" stackId="a" fill="var(--positive)" name="output" />
         </BarChart>
