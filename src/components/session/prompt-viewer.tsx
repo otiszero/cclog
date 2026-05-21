@@ -18,10 +18,14 @@ type Pair = {
 export function PromptViewer({ events }: { events: SessionEvent[] }) {
   const pairs: Pair[] = useMemo(() => {
     const out: Pair[] = [];
-    let pendingPrompt: { ts: string; text: string } | null = null;
+    let pendingPrompt: { ts: string; text: string; rank: number } | null = null;
     for (const e of events) {
       if (e.kind === "user_prompt") {
-        pendingPrompt = { ts: e.ts, text: e.text };
+        const rank = e.source === "human" ? 3 : e.source === "slash_command" ? 2 : 0;
+        if (rank === 0) continue;
+        if (!pendingPrompt || rank > pendingPrompt.rank) {
+          pendingPrompt = { ts: e.ts, text: e.text, rank };
+        }
       } else if (e.kind === "turn") {
         if (pendingPrompt) {
           const tokens = e.usage.input + e.usage.output + e.usage.cacheRead + e.usage.cacheCreate;

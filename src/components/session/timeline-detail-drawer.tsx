@@ -171,10 +171,33 @@ function Timestamps({ ts }: { ts: string }) {
   return <Field label="Timestamp" value={`${d.toLocaleString()} · ${ts}`} />;
 }
 
+const SOURCE_COLOR: Record<string, string> = {
+  human: "var(--accent)",
+  slash_command: "#f59e0b",
+  system_injection: "var(--muted)",
+  sidechain: "var(--muted)",
+};
+
+const SOURCE_LABEL: Record<string, string> = {
+  human: "human — typed by you",
+  slash_command: "slash command (CLI-formatted invocation)",
+  system_injection: "system injection (CLI / hook auto-insert)",
+  sidechain: "sidechain (sub-agent conversation)",
+};
+
 function PromptBody({ data }: { data: PromptEv }) {
   return (
     <>
       <Timestamps ts={data.ts} />
+      <Field
+        label="Source"
+        value={
+          <span style={{ color: SOURCE_COLOR[data.source] }}>
+            {SOURCE_LABEL[data.source] ?? data.source}
+          </span>
+        }
+      />
+      <Field label="Prompt ID" value={data.promptId || "—"} />
       <Field label="UUID" value={data.uuid || "—"} />
       <Block title={`Text (${data.text.length} chars)`} text={data.text} />
       {data.raw !== undefined ? <RawJson value={data.raw} /> : null}

@@ -27,10 +27,16 @@ export async function buildPromptIndex() {
     for (const f of files) {
       try {
         const parsed = await getParsedSession(f, p.slug);
-        let pendingPrompt: { ts: string; text: string } | null = null;
+        let pendingPrompt: { ts: string; text: string; rank: number } | null = null;
         for (const e of parsed.events) {
-          if (e.kind === "user_prompt") pendingPrompt = { ts: e.ts, text: e.text };
-          else if (e.kind === "turn" && pendingPrompt) {
+          if (e.kind === "user_prompt") {
+            const rank =
+              e.source === "human" ? 3 : e.source === "slash_command" ? 2 : 0;
+            if (rank === 0) continue;
+            if (!pendingPrompt || rank > pendingPrompt.rank) {
+              pendingPrompt = { ts: e.ts, text: e.text, rank };
+            }
+          } else if (e.kind === "turn" && pendingPrompt) {
             const tokens =
               e.usage.input + e.usage.output + e.usage.cacheRead + e.usage.cacheCreate;
             docs.push({

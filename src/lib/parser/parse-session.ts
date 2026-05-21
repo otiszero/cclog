@@ -1,8 +1,21 @@
 import { createReadStream } from "node:fs";
 import { basename } from "node:path";
 import { createInterface } from "node:readline";
-import type { ParsedSession, SessionEvent, ToolUseRef } from "@/lib/types";
+import type { ParsedSession, SessionEvent, ToolUseRef, UserPromptSource } from "@/lib/types";
 import { categorizeTool } from "./categorize-tool";
+
+function classifyUserSource(
+  entry: { isMeta?: boolean; isSidechain?: boolean },
+  text: string,
+): UserPromptSource {
+  if (entry.isSidechain === true) return "sidechain";
+  if (entry.isMeta === true) return "system_injection";
+  const t = text.trimStart();
+  if (t.startsWith("<command-name>") || t.startsWith("<command-message>")) return "slash_command";
+  if (t.startsWith("<local-command-")) return "system_injection";
+  if (t.startsWith("<system-reminder>")) return "system_injection";
+  return "human";
+}
 
 // Stream-parse a jsonl session log. Defensive against schema drift:
 // every line wrapped in try/catch, unknown types ignored, malformed lines counted.
@@ -38,9 +51,18 @@ export async function parseSession(
       switch (entry.type) {
         case "user": {
           const content = entry.message?.content;
+          const promptId: string | undefined = entry.promptId;
           // user prompt: string content, or content array with text blocks
           if (typeof content === "string") {
-            events.push({ kind: "user_prompt", ts: ts ?? "", uuid: entry.uuid ?? "", text: content, raw: entry });
+            events.push({
+              kind: "user_prompt",
+              ts: ts ?? "",
+              uuid: entry.uuid ?? "",
+              text: content,
+              source: classifyUserSource(entry, content),
+              promptId,
+              raw: entry,
+            });
           } else if (Array.isArray(content)) {
             for (const block of content) {
               if (block?.type === "text" && typeof block.text === "string") {
@@ -49,6 +71,8 @@ export async function parseSession(
                   ts: ts ?? "",
                   uuid: entry.uuid ?? "",
                   text: block.text,
+                  source: classifyUserSource(entry, block.text),
+                  promptId,
                   raw: entry,
                 });
               } else if (block?.type === "tool_result") {

@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import type { SessionEvent } from "@/lib/types";
+import type { SessionEvent, UserPromptSource } from "@/lib/types";
 import { formatDuration } from "@/lib/format";
 import { categorizeTool, toolDisplayName } from "@/lib/parser/categorize-tool";
 import { TimelineLegend } from "./timeline-legend";
@@ -29,8 +29,49 @@ const CAT_HINT: Record<string, string> = {
   sub_agent: "Spawned sub-agent",
 };
 
+// Visual treatment per user-prompt source.
+export const SOURCE_STYLE: Record<
+  UserPromptSource,
+  { color: string; bg: string; label: string; hint: string }
+> = {
+  human: {
+    color: "var(--accent)",
+    bg: "color-mix(in srgb, #0ea5e9 12%, transparent)",
+    label: "user",
+    hint: "Human prompt — text you typed",
+  },
+  slash_command: {
+    color: "#f59e0b",
+    bg: "color-mix(in srgb, #f59e0b 12%, transparent)",
+    label: "slash",
+    hint: "Slash command invocation (e.g. /cook, /git)",
+  },
+  system_injection: {
+    color: "var(--muted)",
+    bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
+    label: "system",
+    hint: "CLI / hook auto-injection (skill body, caveat, system-reminder)",
+  },
+  sidechain: {
+    color: "var(--muted)",
+    bg: "transparent",
+    label: "sidechain",
+    hint: "Sub-agent conversation",
+  },
+};
+
+type PromptGroup = {
+  key: string;
+  promptId?: string;
+  ts: string; // earliest ts in group
+  entries: PromptEv[];
+  // primary entry decides header rendering: slash_command > human > system_injection
+  primary: PromptEv;
+  injections: PromptEv[]; // entries other than primary
+};
+
 type TimelineRow =
-  | { kind: "prompt"; ev: PromptEv; deltaMs: number }
+  | { kind: "prompt_group"; group: PromptGroup; deltaMs: number }
   | {
       kind: "turn";
       ev: TurnEv;
@@ -39,8 +80,28 @@ type TimelineRow =
       deltaMs: number;
     };
 
+function pickPrimary(entries: PromptEv[]): PromptEv {
+  const slash = entries.find((e) => e.source === "slash_command");
+  if (slash) return slash;
+  const human = entries.find((e) => e.source === "human");
+  if (human) return human;
+  return entries[0];
+}
+
+// Pretty header for a slash command: extract name from <command-name>X</command-name>.
+export function parseSlashCommand(text: string): { name: string; args: string } {
+  const nameMatch = text.match(/<command-name>([^<]*)<\/command-name>/);
+  const argsMatch = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
+  return {
+    name: (nameMatch?.[1] ?? "").trim() || "/?",
+    args: (argsMatch?.[1] ?? "").trim(),
+  };
+}
+
 export function TimelineWaterfall({ events }: TimelineProps) {
   const [selected, setSelected] = useState<DetailItem | null>(null);
+  const [showInjections, setShowInjections] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const rows = useMemo<TimelineRow[]>(() => {
     const toolByParent = new Map<string, ToolEv[]>();
@@ -54,22 +115,54 @@ export function TimelineWaterfall({ events }: TimelineProps) {
 
     const out: TimelineRow[] = [];
     let prevTs = 0;
-    for (const e of events) {
-      if (e.kind !== "user_prompt" && e.kind !== "turn") continue;
-      const ts = Date.parse(e.ts);
-      const deltaMs = prevTs ? Math.max(0, ts - prevTs) : 0;
+    let pending: { key: string; promptId?: string; entries: PromptEv[]; ts: string } | null = null;
 
+    const flush = () => {
+      if (!pending || pending.entries.length === 0) {
+        pending = null;
+        return;
+      }
+      const primary = pickPrimary(pending.entries);
+      const group: PromptGroup = {
+        key: pending.key,
+        promptId: pending.promptId,
+        ts: pending.ts,
+        entries: pending.entries,
+        primary,
+        injections: pending.entries.filter((e) => e !== primary),
+      };
+      const ts = Date.parse(group.ts);
+      const deltaMs = prevTs ? Math.max(0, ts - prevTs) : 0;
+      out.push({ kind: "prompt_group", group, deltaMs });
+      prevTs = ts;
+      pending = null;
+    };
+
+    for (const e of events) {
       if (e.kind === "user_prompt") {
-        out.push({ kind: "prompt", ev: e, deltaMs });
-      } else {
+        if (e.source === "sidechain") continue;
+        const key = e.promptId ? `pid:${e.promptId}` : `uid:${e.uuid || e.ts}`;
+        if (pending && pending.key === key) {
+          pending.entries.push(e);
+        } else {
+          flush();
+          pending = { key, promptId: e.promptId, entries: [e], ts: e.ts };
+        }
+        continue;
+      }
+      if (e.kind === "turn") {
+        flush();
+        const ts = Date.parse(e.ts);
+        const deltaMs = prevTs ? Math.max(0, ts - prevTs) : 0;
         const toolEvents = toolByParent.get(e.uuid) ?? [];
         const subAgents = events
           .filter((x) => x.kind === "sub_agent" && x.parentTurn === e.uuid)
           .map((x) => (x as Extract<SessionEvent, { kind: "sub_agent" }>).subAgentType);
         out.push({ kind: "turn", ev: e, toolEvents, subAgents, deltaMs });
+        prevTs = ts;
       }
-      prevTs = ts;
     }
+    flush();
     return out;
   }, [events]);
 
@@ -96,29 +189,55 @@ export function TimelineWaterfall({ events }: TimelineProps) {
   }
 
   const turnCount = rows.filter((r) => r.kind === "turn").length;
-  const promptCount = rows.filter((r) => r.kind === "prompt").length;
+  const groupCount = rows.filter((r) => r.kind === "prompt_group").length;
+  const humanCount = rows.filter(
+    (r) => r.kind === "prompt_group" && r.group.primary.source === "human",
+  ).length;
+  const slashCount = rows.filter(
+    (r) => r.kind === "prompt_group" && r.group.primary.source === "slash_command",
+  ).length;
+
+  const toggleExpanded = (key: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   return (
     <div className="flex flex-col gap-3">
       <TimelineLegend />
 
-      <div className="flex items-center gap-3 text-xs" style={{ color: "var(--muted)" }}>
-        <span>{promptCount} prompts</span>
+      <div className="flex items-center gap-3 text-xs flex-wrap" style={{ color: "var(--muted)" }}>
+        <span>{humanCount} human</span>
+        <span>·</span>
+        <span>{slashCount} slash</span>
         <span>·</span>
         <span>{turnCount} turns</span>
         <span>·</span>
-        <span>{rows.length} rows shown chronologically</span>
-        <span>·</span>
-        <span>Click a row or tool to inspect</span>
+        <span>{groupCount + turnCount} rows</span>
+        <span className="ml-auto">
+          <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showInjections}
+              onChange={(e) => setShowInjections(e.target.checked)}
+            />
+            <span>Show system injections</span>
+          </label>
+        </span>
       </div>
 
       <div className="flex flex-col gap-1.5">
         {rows.map((r, i) =>
-          r.kind === "prompt" ? (
-            <PromptRow
-              key={`p-${i}`}
+          r.kind === "prompt_group" ? (
+            <PromptGroupRow
+              key={`g-${r.group.key}-${i}`}
               row={r}
-              onClick={() => setSelected({ kind: "prompt", data: r.ev })}
+              expanded={expanded.has(r.group.key) || showInjections}
+              onToggleExpand={() => toggleExpanded(r.group.key)}
+              onSelectPrompt={(p) => setSelected({ kind: "prompt", data: p })}
             />
           ) : (
             <TurnRow
@@ -149,30 +268,125 @@ export function TimelineWaterfall({ events }: TimelineProps) {
   );
 }
 
-function PromptRow({
+function PromptGroupRow({
   row,
-  onClick,
+  expanded,
+  onToggleExpand,
+  onSelectPrompt,
 }: {
-  row: Extract<TimelineRow, { kind: "prompt" }>;
-  onClick: () => void;
+  row: Extract<TimelineRow, { kind: "prompt_group" }>;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onSelectPrompt: (p: PromptEv) => void;
 }) {
+  const { group, deltaMs } = row;
+  const primary = group.primary;
+  const injectionCount = group.injections.length;
+  const style = SOURCE_STYLE[primary.source];
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-start gap-2 py-1.5 px-2 rounded-md text-sm text-left hover:opacity-90"
-      style={{ background: "color-mix(in srgb, #0ea5e9 12%, transparent)" }}
-    >
-      <UserIcon />
-      <span className="tag" style={{ color: "var(--accent)" }}>
-        user
-      </span>
-      <span className="flex-1 truncate" title={row.ev.text}>
-        {row.ev.text.slice(0, 240)}
-      </span>
-      <Timestamp ts={row.ev.ts} deltaMs={row.deltaMs} />
-    </button>
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={() => onSelectPrompt(primary)}
+        className="flex items-start gap-2 py-1.5 px-2 rounded-md text-sm text-left hover:opacity-90"
+        style={{ background: style.bg }}
+      >
+        <SourceIcon source={primary.source} />
+        <span className="tag" style={{ color: style.color, borderColor: style.color }} title={style.hint}>
+          {style.label}
+        </span>
+        <span className="flex-1 truncate" title={primary.text}>
+          <PromptHeader ev={primary} />
+        </span>
+        {injectionCount > 0 ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+            className="tag shrink-0"
+            style={{ color: "var(--muted)", borderColor: "var(--border)" }}
+            title={`${injectionCount} system injection${injectionCount > 1 ? "s" : ""} bundled with this prompt — click to ${expanded ? "hide" : "show"}`}
+          >
+            {expanded ? "−" : "+"}
+            {injectionCount} system
+          </button>
+        ) : null}
+        <Timestamp ts={primary.ts} deltaMs={deltaMs} />
+      </button>
+
+      {expanded && injectionCount > 0 ? (
+        <div className="pl-6 flex flex-col gap-1">
+          {group.injections.map((inj, idx) => {
+            const s = SOURCE_STYLE[inj.source];
+            return (
+              <button
+                key={`inj-${idx}`}
+                type="button"
+                onClick={() => onSelectPrompt(inj)}
+                className="flex items-start gap-2 py-1 px-2 rounded text-xs text-left hover:opacity-90"
+                style={{ background: s.bg }}
+                title={s.hint}
+              >
+                <span
+                  className="tag shrink-0"
+                  style={{ color: s.color, borderColor: s.color }}
+                >
+                  {s.label}
+                </span>
+                <span className="flex-1 truncate" style={{ color: "var(--muted)" }}>
+                  {previewInjection(inj.text)}
+                </span>
+                <span
+                  className="text-[10px] shrink-0"
+                  style={{ color: "var(--muted)" }}
+                >
+                  {inj.text.length.toLocaleString()} chars
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
+}
+
+function PromptHeader({ ev }: { ev: PromptEv }) {
+  if (ev.source === "slash_command") {
+    const { name, args } = parseSlashCommand(ev.text);
+    return (
+      <span>
+        <span className="font-mono" style={{ color: "#f59e0b" }}>
+          {name}
+        </span>
+        {args ? (
+          <span className="ml-2" style={{ color: "var(--muted)" }}>
+            {args.slice(0, 160)}
+            {args.length > 160 ? "…" : ""}
+          </span>
+        ) : null}
+      </span>
+    );
+  }
+  if (ev.source === "system_injection") {
+    return (
+      <span style={{ color: "var(--muted)" }}>
+        {previewInjection(ev.text).slice(0, 240)}
+      </span>
+    );
+  }
+  return <span>{ev.text.slice(0, 240)}</span>;
+}
+
+function previewInjection(text: string): string {
+  // Strip leading XML-ish wrapper for a more readable preview
+  const t = text.trimStart();
+  const tagMatch = t.match(/^<([a-zA-Z][\w-]*)>([\s\S]*?)<\/\1>/);
+  if (tagMatch) return `<${tagMatch[1]}> ${tagMatch[2].replace(/\s+/g, " ").trim().slice(0, 200)}`;
+  return t.replace(/\s+/g, " ").slice(0, 200);
 }
 
 function TurnRow({
@@ -298,9 +512,25 @@ function Timestamp({ ts, deltaMs }: { ts: string; deltaMs: number }) {
   );
 }
 
-function UserIcon() {
+function SourceIcon({ source }: { source: UserPromptSource }) {
+  const color = SOURCE_STYLE[source].color;
+  if (source === "slash_command") {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ color }} className="shrink-0 mt-0.5">
+        <line x1="17" y1="5" x2="7" y2="19" />
+      </svg>
+    );
+  }
+  if (source === "system_injection") {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color }} className="shrink-0 mt-0.5">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M7 9h10M7 13h10M7 17h6" />
+      </svg>
+    );
+  }
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--accent)" }} className="shrink-0 mt-0.5">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color }} className="shrink-0 mt-0.5">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
     </svg>

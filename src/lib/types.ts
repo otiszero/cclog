@@ -17,7 +17,15 @@ export type SessionEvent =
       durationMs?: number;
       raw?: unknown;
     }
-  | { kind: "user_prompt"; ts: string; uuid: string; text: string; raw?: unknown }
+  | {
+      kind: "user_prompt";
+      ts: string;
+      uuid: string;
+      text: string;
+      source: UserPromptSource;
+      promptId?: string;
+      raw?: unknown;
+    }
   | {
       kind: "tool_use";
       ts: string;
@@ -47,6 +55,8 @@ export type ToolUseRef = {
 };
 
 export type ToolCategory = "tool" | "mcp" | "skill" | "sub_agent";
+
+export type UserPromptSource = "human" | "slash_command" | "system_injection" | "sidechain";
 
 export type ParsedSession = {
   sessionId: string;

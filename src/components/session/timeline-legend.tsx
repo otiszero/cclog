@@ -30,10 +30,26 @@ export function TimelineLegend() {
         >
           <Section title="Rows">
             <Item>
-              <RowSwatch kind="prompt" />
+              <RowSwatch kind="human" />
               <span>
-                <b>User prompt</b> — message you sent. Click rows below to expand
-                the assistant&apos;s reply.
+                <b>User</b> — text you typed.
+              </span>
+            </Item>
+            <Item>
+              <RowSwatch kind="slash" />
+              <span>
+                <b>Slash command</b> — invocation like <code>/cook</code>,{" "}
+                <code>/git</code>. The skill body the CLI auto-attaches is shown as
+                a bundled <i>system</i> entry.
+              </span>
+            </Item>
+            <Item>
+              <RowSwatch kind="system" />
+              <span>
+                <b>System injection</b> — hidden by default. Caveats, skill bodies,
+                hook outputs, and <code>&lt;system-reminder&gt;</code> blocks the CLI
+                inserts. Click the <code>+N system</code> badge on a row to expand,
+                or toggle <i>Show system injections</i> to expand all.
               </span>
             </Item>
             <Item>
@@ -41,6 +57,12 @@ export function TimelineLegend() {
               <span>
                 <b>Assistant turn</b> — one model response, including any tool
                 calls it made before replying.
+              </span>
+            </Item>
+            <Item>
+              <span style={{ color: "var(--muted)" }} className="text-xs">
+                Note: sub-agent (sidechain) messages are filtered from this timeline
+                — sub-agents appear as a tag on their parent turn instead.
               </span>
             </Item>
           </Section>
@@ -117,19 +139,19 @@ function Item({ children }: { children: React.ReactNode }) {
   return <div className="flex items-start gap-2 leading-snug">{children}</div>;
 }
 
-function RowSwatch({ kind }: { kind: "prompt" | "turn" }) {
-  if (kind === "prompt") {
-    return (
-      <span
-        className="inline-block w-4 h-4 rounded shrink-0 mt-0.5"
-        style={{ background: "color-mix(in srgb, #0ea5e9 25%, transparent)" }}
-      />
-    );
-  }
+function RowSwatch({ kind }: { kind: "human" | "slash" | "system" | "turn" }) {
+  const bg =
+    kind === "human"
+      ? "color-mix(in srgb, #0ea5e9 25%, transparent)"
+      : kind === "slash"
+        ? "color-mix(in srgb, #f59e0b 25%, transparent)"
+        : kind === "system"
+          ? "color-mix(in srgb, var(--muted) 20%, transparent)"
+          : "transparent";
   return (
     <span
       className="inline-block w-4 h-4 rounded shrink-0 mt-0.5 border"
-      style={{ borderColor: "var(--border)" }}
+      style={{ background: bg, borderColor: kind === "turn" ? "var(--border)" : "transparent" }}
     />
   );
 }
