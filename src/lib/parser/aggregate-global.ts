@@ -15,6 +15,7 @@ export type GlobalSummary = {
   avgCostPerSession: number;
   byModel: { model: string; tokens: number; cost: number }[];
   topProjects: ProjectSummary[];
+  allProjects: ProjectSummary[];
   daily: { date: string; tokens: number; cost: number }[];
   topTools: { key: string; tokens: number; cost: number }[];
 };
@@ -76,6 +77,9 @@ export async function aggregateGlobal(): Promise<GlobalSummary> {
     topProjects: [...summaries]
       .sort((a, b) => b.estCostUsd - a.estCostUsd)
       .slice(0, 20),
+    allProjects: [...summaries].sort((a, b) =>
+      (b.lastActive ?? "").localeCompare(a.lastActive ?? ""),
+    ),
     daily: [...dailyMap.entries()]
       .map(([date, v]) => ({ date, ...v }))
       .sort((a, b) => a.date.localeCompare(b.date))

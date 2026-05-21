@@ -9,12 +9,13 @@ export function Navbar() {
       <div className="max-w-[1400px] mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/" className="font-semibold tracking-tight">
-            analysis-<span style={{ color: "var(--accent)" }}>cc</span>
+            <span style={{ color: "var(--accent)" }}>cclog</span>
           </Link>
           <span className="tag">Claude Code log explorer</span>
         </div>
         <nav className="flex items-center gap-5 text-sm">
           <Link href="/">Dashboard</Link>
+          <Link href="/projects">Projects</Link>
           <Link href="/search">Search</Link>
         </nav>
       </div>
