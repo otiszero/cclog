@@ -4,7 +4,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { PricingDisclaimer } from "@/components/common/pricing-disclaimer";
 
 export const metadata: Metadata = {
-  title: "analysis-cc — Claude Code log explorer",
+  title: "cclog — Claude Code log explorer",
   description:
     "Visualize token usage, sub-agents, tools, MCP and skills across your Claude Code sessions.",
 };

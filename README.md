@@ -1,4 +1,4 @@
-# analysis-cc
+# cclog
 
 Local web UI to explore your Claude Code session logs. Reads `~/.claude/projects/*/*.jsonl`
 and surfaces token usage, sub-agents, tools, MCP and skills with charts, timelines, and
