@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { SessionEvent, TokenUsage } from "@/lib/types";
 import { formatDuration, formatTokens, formatCost } from "@/lib/format";
 import { categorizeTool, toolDisplayName } from "@/lib/parser/categorize-tool";
-import { estimateCost } from "@/lib/pricing";
+import { estimateCostBreakdown } from "@/lib/pricing";
 
 type TurnEv = Extract<SessionEvent, { kind: "turn" }>;
 type PromptEv = Extract<SessionEvent, { kind: "user_prompt" }>;
@@ -230,26 +230,31 @@ function PromptBody({ data }: { data: PromptEv }) {
 
 function UsageTable({ usage, model }: { usage: TokenUsage; model: string }) {
   const total = usage.input + usage.output + usage.cacheRead + usage.cacheCreate;
-  const cost = estimateCost(model, usage);
-  const rows: [string, number][] = [
-    ["Input", usage.input],
-    ["Output", usage.output],
-    ["Cache read", usage.cacheRead],
-    ["Cache create", usage.cacheCreate],
-    ["Total", total],
+  const cost = estimateCostBreakdown(model, usage);
+  const rows: [string, number, number][] = [
+    ["Input", usage.input, cost.input],
+    ["Output", usage.output, cost.output],
+    ["Cache read", usage.cacheRead, cost.cacheRead],
+    ["Cache create", usage.cacheCreate, cost.cacheCreate],
+    ["Total", total, cost.total],
   ];
   return (
     <div className="flex flex-col gap-1">
       <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--muted)" }}>
-        Usage · est cost {formatCost(cost)}
+        Usage · est cost {formatCost(cost.total)}
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-xs">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex justify-between border-b" style={{ borderColor: "var(--border)" }}>
+      <div className="grid grid-cols-1 gap-y-0.5 font-mono text-xs">
+        {rows.map(([k, v, c]) => (
+          <div
+            key={k}
+            className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline border-b"
+            style={{ borderColor: "var(--border)" }}
+          >
             <span style={{ color: "var(--muted)" }}>{k}</span>
             <span>
               {formatTokens(v)} <span style={{ color: "var(--muted)" }}>({v.toLocaleString()})</span>
             </span>
+            <span style={{ color: "var(--positive)" }}>{formatCost(c)}</span>
           </div>
         ))}
       </div>

@@ -1,7 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
 import type { SessionEvent, UserPromptSource } from "@/lib/types";
-import { formatDuration } from "@/lib/format";
+import { formatCost, formatDuration, formatTokens } from "@/lib/format";
+import { estimateCost } from "@/lib/pricing";
 import { categorizeTool, toolDisplayName } from "@/lib/parser/categorize-tool";
 import { TimelineLegend } from "./timeline-legend";
 import { TimelineTokenBar } from "./timeline-token-bar";
@@ -70,15 +71,24 @@ type PromptGroup = {
   injections: PromptEv[]; // entries other than primary
 };
 
-type TimelineRow =
-  | { kind: "prompt_group"; group: PromptGroup; deltaMs: number }
-  | {
-      kind: "turn";
-      ev: TurnEv;
-      toolEvents: ToolEv[];
-      subAgents: string[];
-      deltaMs: number;
-    };
+type TurnNode = {
+  ev: TurnEv;
+  toolEvents: ToolEv[];
+  subAgents: string[];
+  deltaMs: number;
+};
+
+type PromptGroupRowT = {
+  kind: "prompt_group";
+  group: PromptGroup;
+  deltaMs: number;
+  turns: TurnNode[];
+};
+type OrphanTurnRowT = {
+  kind: "turn"; // orphan turn before any prompt
+  node: TurnNode;
+};
+type TimelineRow = PromptGroupRowT | OrphanTurnRowT;
 
 function pickPrimary(entries: PromptEv[]): PromptEv {
   const slash = entries.find((e) => e.source === "slash_command");
@@ -100,7 +110,7 @@ export function parseSlashCommand(text: string): { name: string; args: string } 
 
 export function TimelineWaterfall({ events }: TimelineProps) {
   const [selected, setSelected] = useState<DetailItem | null>(null);
-  const [showInjections, setShowInjections] = useState(false);
+  const [expandAll, setExpandAll] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const rows = useMemo<TimelineRow[]>(() => {
@@ -115,67 +125,85 @@ export function TimelineWaterfall({ events }: TimelineProps) {
 
     const out: TimelineRow[] = [];
     let prevTs = 0;
-    let pending: { key: string; promptId?: string; entries: PromptEv[]; ts: string } | null = null;
+    let pendingPrompt: { key: string; promptId?: string; entries: PromptEv[]; ts: string } | null =
+      null;
+    let currentGroupRow: PromptGroupRowT | null = null;
 
-    const flush = () => {
-      if (!pending || pending.entries.length === 0) {
-        pending = null;
+    const finalizePrompt = () => {
+      if (!pendingPrompt || pendingPrompt.entries.length === 0) {
+        pendingPrompt = null;
         return;
       }
-      const primary = pickPrimary(pending.entries);
+      const primary = pickPrimary(pendingPrompt.entries);
       const group: PromptGroup = {
-        key: pending.key,
-        promptId: pending.promptId,
-        ts: pending.ts,
-        entries: pending.entries,
+        key: pendingPrompt.key,
+        promptId: pendingPrompt.promptId,
+        ts: pendingPrompt.ts,
+        entries: pendingPrompt.entries,
         primary,
-        injections: pending.entries.filter((e) => e !== primary),
+        injections: pendingPrompt.entries.filter((e) => e !== primary),
       };
       const ts = Date.parse(group.ts);
       const deltaMs = prevTs ? Math.max(0, ts - prevTs) : 0;
-      out.push({ kind: "prompt_group", group, deltaMs });
+      const row: PromptGroupRowT = {
+        kind: "prompt_group",
+        group,
+        deltaMs,
+        turns: [],
+      };
+      out.push(row);
+      currentGroupRow = row;
       prevTs = ts;
-      pending = null;
+      pendingPrompt = null;
     };
 
     for (const e of events) {
       if (e.kind === "user_prompt") {
         if (e.source === "sidechain") continue;
         const key = e.promptId ? `pid:${e.promptId}` : `uid:${e.uuid || e.ts}`;
-        if (pending && pending.key === key) {
-          pending.entries.push(e);
+        if (pendingPrompt && pendingPrompt.key === key) {
+          pendingPrompt.entries.push(e);
         } else {
-          flush();
-          pending = { key, promptId: e.promptId, entries: [e], ts: e.ts };
+          finalizePrompt();
+          pendingPrompt = { key, promptId: e.promptId, entries: [e], ts: e.ts };
         }
         continue;
       }
       if (e.kind === "turn") {
-        flush();
+        finalizePrompt();
         const ts = Date.parse(e.ts);
         const deltaMs = prevTs ? Math.max(0, ts - prevTs) : 0;
         const toolEvents = toolByParent.get(e.uuid) ?? [];
         const subAgents = events
           .filter((x) => x.kind === "sub_agent" && x.parentTurn === e.uuid)
           .map((x) => (x as Extract<SessionEvent, { kind: "sub_agent" }>).subAgentType);
-        out.push({ kind: "turn", ev: e, toolEvents, subAgents, deltaMs });
+        const node: TurnNode = { ev: e, toolEvents, subAgents, deltaMs };
+        const grp = currentGroupRow as PromptGroupRowT | null;
+        if (grp) {
+          grp.turns.push(node);
+        } else {
+          out.push({ kind: "turn", node });
+        }
         prevTs = ts;
       }
     }
-    flush();
+    finalizePrompt();
     return out;
   }, [events]);
 
   const { maxTotal, maxWork } = useMemo(() => {
     let total = 1;
     let work = 1;
-    for (const r of rows) {
-      if (r.kind !== "turn") continue;
-      const u = r.ev.usage;
+    const visit = (n: TurnNode) => {
+      const u = n.ev.usage;
       const t = u.input + u.output + u.cacheRead + u.cacheCreate;
       const w = u.output + u.cacheCreate;
       if (t > total) total = t;
       if (w > work) work = w;
+    };
+    for (const r of rows) {
+      if (r.kind === "turn") visit(r.node);
+      else r.turns.forEach(visit);
     }
     return { maxTotal: total, maxWork: work };
   }, [rows]);
@@ -188,7 +216,11 @@ export function TimelineWaterfall({ events }: TimelineProps) {
     );
   }
 
-  const turnCount = rows.filter((r) => r.kind === "turn").length;
+  let turnCount = 0;
+  for (const r of rows) {
+    if (r.kind === "turn") turnCount += 1;
+    else turnCount += r.turns.length;
+  }
   const groupCount = rows.filter((r) => r.kind === "prompt_group").length;
   const humanCount = rows.filter(
     (r) => r.kind === "prompt_group" && r.group.primary.source === "human",
@@ -216,15 +248,15 @@ export function TimelineWaterfall({ events }: TimelineProps) {
         <span>·</span>
         <span>{turnCount} turns</span>
         <span>·</span>
-        <span>{groupCount + turnCount} rows</span>
+        <span>{groupCount} prompt groups</span>
         <span className="ml-auto">
           <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
             <input
               type="checkbox"
-              checked={showInjections}
-              onChange={(e) => setShowInjections(e.target.checked)}
+              checked={expandAll}
+              onChange={(e) => setExpandAll(e.target.checked)}
             />
-            <span>Show system injections</span>
+            <span>Expand all</span>
           </label>
         </span>
       </div>
@@ -235,22 +267,33 @@ export function TimelineWaterfall({ events }: TimelineProps) {
             <PromptGroupRow
               key={`g-${r.group.key}-${i}`}
               row={r}
-              expanded={expanded.has(r.group.key) || showInjections}
+              expanded={expandAll || expanded.has(r.group.key)}
               onToggleExpand={() => toggleExpanded(r.group.key)}
               onSelectPrompt={(p) => setSelected({ kind: "prompt", data: p })}
+              onSelectTurn={(node) =>
+                setSelected({
+                  kind: "turn",
+                  data: node.ev,
+                  toolEvents: node.toolEvents,
+                  subAgents: node.subAgents,
+                })
+              }
+              onSelectTool={(t) => setSelected({ kind: "tool", data: t })}
+              maxTotal={maxTotal}
+              maxWork={maxWork}
             />
           ) : (
             <TurnRow
-              key={r.ev.uuid}
-              row={r}
+              key={r.node.ev.uuid}
+              node={r.node}
               maxTotal={maxTotal}
               maxWork={maxWork}
               onClick={() =>
                 setSelected({
                   kind: "turn",
-                  data: r.ev,
-                  toolEvents: r.toolEvents,
-                  subAgents: r.subAgents,
+                  data: r.node.ev,
+                  toolEvents: r.node.toolEvents,
+                  subAgents: r.node.subAgents,
                 })
               }
               onToolClick={(tool) => setSelected({ kind: "tool", data: tool })}
@@ -268,86 +311,174 @@ export function TimelineWaterfall({ events }: TimelineProps) {
   );
 }
 
+function summarizeTurns(turns: TurnNode[]): {
+  count: number;
+  durationMs: number;
+  toolCount: number;
+  outputTokens: number;
+  totalTokens: number;
+  cost: number;
+  models: string[];
+} {
+  let durationMs = 0;
+  let toolCount = 0;
+  let outputTokens = 0;
+  let totalTokens = 0;
+  let cost = 0;
+  const models = new Set<string>();
+  for (const t of turns) {
+    const u = t.ev.usage;
+    durationMs += t.ev.durationMs ?? 0;
+    toolCount += t.toolEvents.length;
+    outputTokens += u.output + u.cacheCreate;
+    totalTokens += u.input + u.output + u.cacheRead + u.cacheCreate;
+    cost += estimateCost(t.ev.model, u);
+    models.add(t.ev.model);
+  }
+  return {
+    count: turns.length,
+    durationMs,
+    toolCount,
+    outputTokens,
+    totalTokens,
+    cost,
+    models: [...models],
+  };
+}
+
 function PromptGroupRow({
   row,
   expanded,
   onToggleExpand,
   onSelectPrompt,
+  onSelectTurn,
+  onSelectTool,
+  maxTotal,
+  maxWork,
 }: {
   row: Extract<TimelineRow, { kind: "prompt_group" }>;
   expanded: boolean;
   onToggleExpand: () => void;
   onSelectPrompt: (p: PromptEv) => void;
+  onSelectTurn: (n: TurnNode) => void;
+  onSelectTool: (t: ToolEv) => void;
+  maxTotal: number;
+  maxWork: number;
 }) {
-  const { group, deltaMs } = row;
+  const { group, deltaMs, turns } = row;
   const primary = group.primary;
   const injectionCount = group.injections.length;
   const style = SOURCE_STYLE[primary.source];
+  const summary = summarizeTurns(turns);
+  const hasExpandable = injectionCount > 0 || turns.length > 0;
 
   return (
     <div className="flex flex-col gap-1">
-      <button
-        type="button"
-        onClick={() => onSelectPrompt(primary)}
-        className="flex items-start gap-2 py-1.5 px-2 rounded-md text-sm text-left hover:opacity-90"
+      <div
+        className="flex items-start gap-2 py-1.5 px-2 rounded-md text-sm"
         style={{ background: style.bg }}
       >
-        <SourceIcon source={primary.source} />
-        <span className="tag" style={{ color: style.color, borderColor: style.color }} title={style.hint}>
-          {style.label}
-        </span>
-        <span className="flex-1 truncate" title={primary.text}>
-          <PromptHeader ev={primary} />
-        </span>
+        {hasExpandable ? (
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            className="shrink-0 mt-0.5 w-4 h-4 inline-flex items-center justify-center rounded hover:bg-black/10"
+            style={{ color: "var(--muted)" }}
+            title={expanded ? "Collapse" : "Expand"}
+            aria-label={expanded ? "Collapse" : "Expand"}
+          >
+            <Chevron open={expanded} />
+          </button>
+        ) : (
+          <span className="shrink-0 mt-0.5 w-4 h-4" />
+        )}
+        <button
+          type="button"
+          onClick={() => onSelectPrompt(primary)}
+          className="flex-1 min-w-0 flex items-start gap-2 text-left hover:opacity-90"
+        >
+          <SourceIcon source={primary.source} />
+          <span
+            className="tag"
+            style={{ color: style.color, borderColor: style.color }}
+            title={style.hint}
+          >
+            {style.label}
+          </span>
+          <span className="flex-1 truncate" title={primary.text}>
+            <PromptHeader ev={primary} />
+          </span>
+        </button>
+        {turns.length > 0 ? (
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            className="tag shrink-0 hidden sm:inline-flex"
+            style={{ color: "var(--muted)", borderColor: "var(--border)" }}
+            title={`${summary.count} assistant turn${summary.count > 1 ? "s" : ""}\nDuration: ${formatDuration(summary.durationMs)}\nTools: ${summary.toolCount}\nTotal tokens: ${summary.totalTokens.toLocaleString()} (output+cache: ${summary.outputTokens.toLocaleString()})\nEst. cost: ${formatCost(summary.cost)}\nModels: ${summary.models.join(", ")}`}
+          >
+            {summary.count}↵ · {formatDuration(summary.durationMs)}
+            {summary.toolCount > 0 ? ` · ${summary.toolCount}🔧` : ""} ·{" "}
+            {formatTokens(summary.totalTokens)} · {formatCost(summary.cost)}
+          </button>
+        ) : null}
         {injectionCount > 0 ? (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleExpand();
-            }}
+            onClick={onToggleExpand}
             className="tag shrink-0"
             style={{ color: "var(--muted)", borderColor: "var(--border)" }}
-            title={`${injectionCount} system injection${injectionCount > 1 ? "s" : ""} bundled with this prompt — click to ${expanded ? "hide" : "show"}`}
+            title={`${injectionCount} system injection${injectionCount > 1 ? "s" : ""} bundled with this prompt`}
           >
-            {expanded ? "−" : "+"}
-            {injectionCount} system
+            +{injectionCount} sys
           </button>
         ) : null}
         <Timestamp ts={primary.ts} deltaMs={deltaMs} />
-      </button>
+      </div>
 
-      {expanded && injectionCount > 0 ? (
-        <div className="pl-6 flex flex-col gap-1">
-          {group.injections.map((inj, idx) => {
-            const s = SOURCE_STYLE[inj.source];
-            return (
-              <button
-                key={`inj-${idx}`}
-                type="button"
-                onClick={() => onSelectPrompt(inj)}
-                className="flex items-start gap-2 py-1 px-2 rounded text-xs text-left hover:opacity-90"
-                style={{ background: s.bg }}
-                title={s.hint}
-              >
-                <span
-                  className="tag shrink-0"
-                  style={{ color: s.color, borderColor: s.color }}
-                >
-                  {s.label}
-                </span>
-                <span className="flex-1 truncate" style={{ color: "var(--muted)" }}>
-                  {previewInjection(inj.text)}
-                </span>
-                <span
-                  className="text-[10px] shrink-0"
-                  style={{ color: "var(--muted)" }}
-                >
-                  {inj.text.length.toLocaleString()} chars
-                </span>
-              </button>
-            );
-          })}
+      {expanded ? (
+        <div
+          className="ml-3 pl-3 flex flex-col gap-1.5 border-l"
+          style={{ borderColor: "var(--border)" }}
+        >
+          {injectionCount > 0
+            ? group.injections.map((inj, idx) => {
+                const s = SOURCE_STYLE[inj.source];
+                return (
+                  <button
+                    key={`inj-${idx}`}
+                    type="button"
+                    onClick={() => onSelectPrompt(inj)}
+                    className="flex items-start gap-2 py-1 px-2 rounded text-xs text-left hover:opacity-90"
+                    style={{ background: s.bg }}
+                    title={s.hint}
+                  >
+                    <span
+                      className="tag shrink-0"
+                      style={{ color: s.color, borderColor: s.color }}
+                    >
+                      {s.label}
+                    </span>
+                    <span className="flex-1 truncate" style={{ color: "var(--muted)" }}>
+                      {previewInjection(inj.text)}
+                    </span>
+                    <span className="text-[10px] shrink-0" style={{ color: "var(--muted)" }}>
+                      {inj.text.length.toLocaleString()} chars
+                    </span>
+                  </button>
+                );
+              })
+            : null}
+          {turns.map((node) => (
+            <TurnRow
+              key={node.ev.uuid}
+              node={node}
+              maxTotal={maxTotal}
+              maxWork={maxWork}
+              onClick={() => onSelectTurn(node)}
+              onToolClick={onSelectTool}
+            />
+          ))}
         </div>
       ) : null}
     </div>
@@ -390,19 +521,22 @@ function previewInjection(text: string): string {
 }
 
 function TurnRow({
-  row,
+  node,
   maxTotal,
   maxWork,
   onClick,
   onToolClick,
 }: {
-  row: Extract<TimelineRow, { kind: "turn" }>;
+  node: TurnNode;
   maxTotal: number;
   maxWork: number;
   onClick: () => void;
   onToolClick: (tool: ToolEv) => void;
 }) {
-  const { ev, toolEvents, subAgents } = row;
+  const { ev, toolEvents, subAgents, deltaMs } = node;
+  const u = ev.usage;
+  const totalTokens = u.input + u.output + u.cacheRead + u.cacheCreate;
+  const cost = estimateCost(ev.model, u);
   return (
     <div
       role="button"
@@ -424,6 +558,20 @@ function TurnRow({
         </span>
         <span style={{ color: "var(--muted)" }} title="Wall-clock duration of this turn">
           {formatDuration(ev.durationMs ?? 0)}
+        </span>
+        <span
+          className="tag"
+          style={{ color: "var(--muted)", borderColor: "var(--border)" }}
+          title={`Total tokens: ${totalTokens.toLocaleString()}\n  input: ${u.input.toLocaleString()}\n  output: ${u.output.toLocaleString()}\n  cache read: ${u.cacheRead.toLocaleString()}\n  cache create: ${u.cacheCreate.toLocaleString()}`}
+        >
+          {formatTokens(totalTokens)}
+        </span>
+        <span
+          className="tag"
+          style={{ color: "var(--muted)", borderColor: "var(--border)" }}
+          title={`Estimated cost based on ${ev.model} pricing`}
+        >
+          {formatCost(cost)}
         </span>
         {toolEvents.length > 0 ? (
           <span
@@ -459,7 +607,7 @@ function TurnRow({
           </span>
         ) : null}
         <span className="ml-auto flex items-center gap-2">
-          <Timestamp ts={ev.ts} deltaMs={row.deltaMs} />
+          <Timestamp ts={ev.ts} deltaMs={deltaMs} />
         </span>
       </div>
 
@@ -509,6 +657,24 @@ function Timestamp({ ts, deltaMs }: { ts: string; deltaMs: number }) {
         <span className="ml-1 opacity-70">(+{formatDuration(deltaMs)})</span>
       ) : null}
     </span>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 120ms" }}
+    >
+      <polyline points="9 6 15 12 9 18" />
+    </svg>
   );
 }
 

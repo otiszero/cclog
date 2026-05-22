@@ -5,7 +5,7 @@ import { TOKEN_COLORS } from "./timeline-token-bar";
 // Inline legend explaining what every visual element on the Timeline means.
 // Collapsible so it doesn't take vertical space once the user has read it.
 export function TimelineLegend() {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <div

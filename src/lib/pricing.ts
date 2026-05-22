@@ -50,3 +50,21 @@ export function estimateCost(model: string, usage: TokenUsage): number {
     1_000_000
   );
 }
+
+export type CostBreakdown = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreate: number;
+  total: number;
+};
+
+export function estimateCostBreakdown(model: string, usage: TokenUsage): CostBreakdown {
+  const p = resolvePricing(model);
+  if (!p) return { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, total: 0 };
+  const input = (usage.input * p.input) / 1_000_000;
+  const output = (usage.output * p.output) / 1_000_000;
+  const cacheRead = (usage.cacheRead * p.cacheRead) / 1_000_000;
+  const cacheCreate = (usage.cacheCreate * p.cacheCreate5m) / 1_000_000;
+  return { input, output, cacheRead, cacheCreate, total: input + output + cacheRead + cacheCreate };
+}
