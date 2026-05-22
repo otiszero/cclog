@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ProjectDir } from "@/lib/types";
 import { projectsDir } from "./claude-home";
 import { decodeProjectSlug } from "./decode-project-path";
+import { readProjectCwd } from "./read-project-cwd";
 
 export async function listProjects(): Promise<ProjectDir[]> {
   const root = projectsDir();
@@ -37,9 +38,10 @@ export async function listProjects(): Promise<ProjectDir[]> {
         /* ignore */
       }
     }
+    const cwd = await readProjectCwd(slug);
     out.push({
       slug,
-      realPath: decodeProjectSlug(slug),
+      realPath: cwd ?? decodeProjectSlug(slug),
       sessionCount: files.length,
       lastModified,
     });

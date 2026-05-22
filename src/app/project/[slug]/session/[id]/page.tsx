@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { projectsDir } from "@/lib/parser/claude-home";
 import { getParsedSession } from "@/lib/parser/cache";
 import { decodeProjectSlug } from "@/lib/parser/decode-project-path";
+import { readProjectCwd } from "@/lib/parser/read-project-cwd";
 import {
   estimateSessionCost,
   leaderboardByCategory,
@@ -46,6 +47,7 @@ export default async function SessionPage({
   const byMcp = leaderboardByCategory(parsed, "mcp");
   const bySkill = leaderboardByCategory(parsed, "skill");
   const bySubAgent = leaderboardByCategory(parsed, "sub_agent");
+  const projectRealPath = (await readProjectCwd(decodedSlug)) ?? decodeProjectSlug(decodedSlug);
 
   return (
     <div className="flex flex-col gap-6">
@@ -55,7 +57,7 @@ export default async function SessionPage({
           className="text-xs"
           style={{ color: "var(--muted)" }}
         >
-          ← {decodeProjectSlug(decodedSlug)}
+          ← {projectRealPath}
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight mt-1 font-mono">{id}</h1>
         <p className="text-xs" style={{ color: "var(--muted)" }}>

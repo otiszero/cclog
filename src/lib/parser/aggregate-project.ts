@@ -8,6 +8,7 @@ import type {
 import { estimateCost } from "@/lib/pricing";
 import { getParsedSession } from "./cache";
 import { decodeProjectSlug } from "./decode-project-path";
+import { readProjectCwd } from "./read-project-cwd";
 import { listSessionFiles } from "./scan-projects";
 import {
   addUsage,
@@ -92,9 +93,10 @@ export async function aggregateProject(slug: string): Promise<ProjectSummary> {
     }
   }
 
+  const cwd = await readProjectCwd(slug);
   const summary: ProjectSummary = {
     slug,
-    realPath: decodeProjectSlug(slug),
+    realPath: cwd ?? decodeProjectSlug(slug),
     sessionCount: files.length,
     lifetimeTokens: lifetime,
     estCostUsd: cost,
