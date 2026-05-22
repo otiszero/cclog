@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Fira_Sans, Fira_Code } from "next/font/google";
 import "./globals.css";
-import { Navbar } from "@/components/layout/navbar";
+import { Sidebar } from "@/components/layout/sidebar";
 import { PricingDisclaimer } from "@/components/common/pricing-disclaimer";
 
 const firaSans = Fira_Sans({
@@ -42,22 +42,24 @@ export default function RootLayout({
       className={`h-full antialiased ${firaSans.variable} ${firaCode.variable}`}
     >
       <body
-        className="min-h-full flex flex-col"
+        className="min-h-full flex md:flex-row flex-col"
         style={{ fontFamily: "var(--font-fira-sans), var(--font-sans)" }}
       >
-        <Navbar />
-        <main
-          id="main"
-          className="flex-1 px-4 md:px-6 py-4 md:py-6 max-w-[1400px] w-full mx-auto"
-        >
-          {children}
-        </main>
-        <footer
-          className="px-4 md:px-6 py-4 border-t"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <PricingDisclaimer />
-        </footer>
+        <Sidebar />
+        <div className="flex-1 flex flex-col min-w-0">
+          <main
+            id="main"
+            className="flex-1 px-4 md:px-6 py-4 md:py-6 max-w-[1400px] w-full mx-auto"
+          >
+            {children}
+          </main>
+          <footer
+            className="px-4 md:px-6 py-4 border-t"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <PricingDisclaimer />
+          </footer>
+        </div>
       </body>
     </html>
   );
