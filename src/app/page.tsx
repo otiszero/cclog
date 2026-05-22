@@ -4,6 +4,7 @@ import { KpiCard } from "@/components/common/kpi-card";
 import { UsageTrendChart } from "@/components/global/usage-trend-chart";
 import { ModelDonut } from "@/components/global/model-donut";
 import { LeaderboardCard } from "@/components/project/leaderboard-card";
+import { EmptyState } from "@/components/common/empty-state";
 import { formatCost, formatRelative, formatTokens } from "@/lib/format";
 import { sumTokens } from "@/lib/parser/derive-metrics";
 
@@ -15,14 +16,17 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Global usage</h1>
-        <p className="text-sm" style={{ color: "var(--muted)" }}>
-          Aggregate of every Claude Code session under <code>~/.claude/projects</code>.
+      <header className="flex flex-col gap-1">
+        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
+          Global usage
+        </h1>
+        <p className="text-sm" style={{ color: "var(--foreground-muted)" }}>
+          Aggregate of every Claude Code session under{" "}
+          <code className="font-mono text-xs">~/.claude/projects</code>.
         </p>
       </header>
 
-      <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard label="Projects" value={String(g.totalProjects)} />
         <KpiCard label="Sessions" value={String(g.totalSessions)} />
         <KpiCard label="Tokens (lifetime)" value={formatTokens(totalTok)} />
@@ -45,39 +49,56 @@ export default async function HomePage() {
         <div className="card">
           <h3 className="text-sm font-semibold mb-3">Top projects</h3>
           {g.topProjects.length === 0 ? (
-            <p className="text-sm" style={{ color: "var(--muted)" }}>
-              No projects yet. Start a Claude Code session in some directory and refresh.
-            </p>
+            <EmptyState
+              title="No projects yet"
+              hint="Start a Claude Code session in some directory and refresh this page."
+            />
           ) : (
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th className="text-right">Sessions</th>
-                  <th className="text-right">Tokens</th>
-                  <th className="text-right">Cost</th>
-                  <th className="text-right">Last active</th>
-                </tr>
-              </thead>
-              <tbody>
-                {g.topProjects.map((p) => (
-                  <tr key={p.slug}>
-                    <td>
-                      <Link
-                        href={`/project/${encodeURIComponent(p.slug)}`}
-                        className="truncate block max-w-[420px]"
-                      >
-                        {p.realPath}
-                      </Link>
-                    </td>
-                    <td className="text-right">{p.sessionCount}</td>
-                    <td className="text-right">{formatTokens(sumTokens(p.lifetimeTokens))}</td>
-                    <td className="text-right">{formatCost(p.estCostUsd)}</td>
-                    <td className="text-right">{formatRelative(p.lastActive)}</td>
+            <div className="overflow-x-auto">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th scope="col">Project</th>
+                    <th scope="col" className="text-right num">
+                      Sessions
+                    </th>
+                    <th scope="col" className="text-right num">
+                      Tokens
+                    </th>
+                    <th scope="col" className="text-right num">
+                      Cost
+                    </th>
+                    <th scope="col" className="text-right num">
+                      Last active
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {g.topProjects.map((p) => (
+                    <tr key={p.slug}>
+                      <td>
+                        <Link
+                          href={`/project/${encodeURIComponent(p.slug)}`}
+                          className="truncate block max-w-[420px]"
+                        >
+                          {p.realPath}
+                        </Link>
+                      </td>
+                      <td className="text-right num">{p.sessionCount}</td>
+                      <td className="text-right num">
+                        {formatTokens(sumTokens(p.lifetimeTokens))}
+                      </td>
+                      <td className="text-right num">
+                        {formatCost(p.estCostUsd)}
+                      </td>
+                      <td className="text-right num">
+                        {formatRelative(p.lastActive)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 

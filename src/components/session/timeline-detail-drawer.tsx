@@ -42,15 +42,24 @@ export function TimelineDetailDrawer({
   if (!item) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex">
-      <div
+    <div
+      className="fixed inset-0 z-50 flex"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Event details"
+    >
+      <button
+        type="button"
         className="flex-1 bg-black/40"
         onClick={onClose}
         aria-label="Close drawer"
       />
       <aside
-        className="w-full sm:w-[560px] h-full overflow-y-auto flex flex-col"
-        style={{ background: "var(--background)", borderLeft: "1px solid var(--border)" }}
+        className="w-full md:w-[480px] lg:w-[560px] h-full overflow-y-auto flex flex-col"
+        style={{
+          background: "var(--background)",
+          borderLeft: "1px solid var(--border)",
+        }}
       >
         <header
           className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b"
@@ -71,10 +80,24 @@ export function TimelineDetailDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="text-sm px-2 py-1 rounded hover:bg-black/10"
-            aria-label="Close"
+            className="text-sm px-2 py-1 rounded-md transition-colors"
+            style={{ color: "var(--foreground-muted)" }}
+            aria-label="Close drawer"
           >
-            ✕
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </header>
 

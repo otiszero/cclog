@@ -1,7 +1,22 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Fira_Sans, Fira_Code } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/layout/navbar";
 import { PricingDisclaimer } from "@/components/common/pricing-disclaimer";
+
+const firaSans = Fira_Sans({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-fira-sans",
+  display: "swap",
+});
+
+const firaCode = Fira_Code({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-fira-code",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "cclog — Claude Code log explorer",
@@ -9,15 +24,38 @@ export const metadata: Metadata = {
     "Visualize token usage, sub-agents, tools, MCP and skills across your Claude Code sessions.",
 };
 
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f7f7f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0d" },
+  ],
+  width: "device-width",
+  initialScale: 1,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">
+    <html
+      lang="en"
+      className={`h-full antialiased ${firaSans.variable} ${firaCode.variable}`}
+    >
+      <body
+        className="min-h-full flex flex-col"
+        style={{ fontFamily: "var(--font-fira-sans), var(--font-sans)" }}
+      >
         <Navbar />
-        <main className="flex-1 px-6 py-6 max-w-[1400px] w-full mx-auto">{children}</main>
-        <footer className="px-6 py-4 border-t" style={{ borderColor: "var(--border)" }}>
+        <main
+          id="main"
+          className="flex-1 px-4 md:px-6 py-4 md:py-6 max-w-[1400px] w-full mx-auto"
+        >
+          {children}
+        </main>
+        <footer
+          className="px-4 md:px-6 py-4 border-t"
+          style={{ borderColor: "var(--border)" }}
+        >
           <PricingDisclaimer />
         </footer>
       </body>

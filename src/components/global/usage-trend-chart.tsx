@@ -46,7 +46,11 @@ export function UsageTrendChart({
               border: "1px solid var(--border)",
               borderRadius: 8,
               fontSize: 12,
+              color: "var(--foreground)",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
             }}
+            cursor={{ stroke: "var(--border-strong)", strokeDasharray: "3 3" }}
+            labelStyle={{ color: "var(--foreground-muted)", marginBottom: 4 }}
           />
           <Area
             yAxisId="left"

@@ -17,7 +17,7 @@ export function LeaderboardCard({
     return (
       <div className="card">
         <h3 className="text-sm font-semibold mb-2">{title}</h3>
-        <p className="text-xs" style={{ color: "var(--muted)" }}>
+        <p className="text-xs" style={{ color: "var(--foreground-muted)" }}>
           {emptyHint ?? "No data."}
         </p>
       </div>
@@ -26,26 +26,38 @@ export function LeaderboardCard({
   return (
     <div className="card">
       <h3 className="text-sm font-semibold mb-3">{title}</h3>
-      <table className="data">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th className="text-right">Calls</th>
-            <th className="text-right">Tokens</th>
-            <th className="text-right">Cost</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.slice(0, maxRows).map((r) => (
-            <tr key={r.key}>
-              <td className="truncate max-w-[260px]" title={r.key}>{r.key}</td>
-              <td className="text-right">{r.count}</td>
-              <td className="text-right">{formatTokens(sumTokens(r.tokens))}</td>
-              <td className="text-right">{formatCost(r.estCostUsd)}</td>
+      <div className="overflow-x-auto">
+        <table className="data">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col" className="text-right num">
+                Calls
+              </th>
+              <th scope="col" className="text-right num">
+                Tokens
+              </th>
+              <th scope="col" className="text-right num">
+                Cost
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.slice(0, maxRows).map((r) => (
+              <tr key={r.key}>
+                <td className="truncate max-w-[260px]" title={r.key}>
+                  {r.key}
+                </td>
+                <td className="text-right num">{r.count}</td>
+                <td className="text-right num">
+                  {formatTokens(sumTokens(r.tokens))}
+                </td>
+                <td className="text-right num">{formatCost(r.estCostUsd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

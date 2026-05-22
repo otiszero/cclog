@@ -45,6 +45,8 @@ export function ModelDonut({
               border: "1px solid var(--border)",
               borderRadius: 8,
               fontSize: 12,
+              color: "var(--foreground)",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
             }}
           />
         </PieChart>
