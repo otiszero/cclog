@@ -6,6 +6,22 @@ import type {
   ReReadReason,
   SessionEvent,
 } from "@/lib/types";
+import { estimateCost } from "@/lib/pricing";
+
+// Price `n` tokens of a single kind for `model` — rides on existing estimateCost
+// instead of exposing raw rate tables.
+function priceTokens(
+  model: string,
+  kind: "cacheCreate" | "cacheRead" | "input",
+  n: number,
+): number {
+  return estimateCost(model, {
+    input: kind === "input" ? n : 0,
+    output: 0,
+    cacheRead: kind === "cacheRead" ? n : 0,
+    cacheCreate: kind === "cacheCreate" ? n : 0,
+  });
+}
 
 const DRIFT_TURNS = 8; // turns between re-reads → likely context drift
 
@@ -72,24 +88,49 @@ export function deriveEfficiency(parsed: ParsedSession): EfficiencyReport {
   // --- Anti-pattern findings
   const findings: AntiPatternFinding[] = [];
 
-  // Index turns by uuid in event order for reason-classification & turns-after counts
+  // Index turns by uuid in event order for reason-classification, turns-after counts, and model lookup
   const turnOrderByUuid = new Map<string, number>();
-  turns.forEach((t, idx) => turnOrderByUuid.set(t.uuid, idx));
+  const modelByTurnUuid = new Map<string, string>();
+  turns.forEach((t, idx) => {
+    turnOrderByUuid.set(t.uuid, idx);
+    modelByTurnUuid.set(t.uuid, t.model);
+  });
+  const modelFor = (turnUuid: string) => modelByTurnUuid.get(turnUuid) ?? "claude-sonnet-4-6";
+
+  let reReadUsd = 0;
+  let bloatUsd = 0;
+  let wastedUpperUsd = 0;
 
   for (const [path, list] of readsByPath.entries()) {
     if (list.length < REGREP_MIN) continue;
-    const reads = list.map((tu, i) => ({
-      ts: tu.ts,
-      turnUuid: tu.parentTurn,
-      reason: classifyReReadReason({
+    const reads = list.map((tu, i) => {
+      const reason = classifyReReadReason({
         path,
         currentIdx: i,
         currentTu: tu,
         history: list,
         allTools: tools,
         turnOrderByUuid,
-      }),
-    }));
+      });
+      const chars = tu.resultFull?.length ?? 0;
+      const isWaste = i > 0;
+      const wastedTokens = isWaste ? Math.round(chars / 4) : 0;
+      const model = modelFor(tu.parentTurn);
+      const wastedCostUsd = priceTokens(model, "cacheCreate", wastedTokens);
+      const wastedCostUpperUsd = priceTokens(model, "input", wastedTokens);
+      if (isWaste) {
+        reReadUsd += wastedCostUsd;
+        wastedUpperUsd += wastedCostUpperUsd;
+      }
+      return {
+        ts: tu.ts,
+        turnUuid: tu.parentTurn,
+        reason,
+        chars,
+        wastedCostUsd,
+        wastedCostUpperUsd,
+      };
+    });
     findings.push({
       kind: "re_grep_loop",
       label: shortPath(path),
@@ -105,8 +146,16 @@ export function deriveEfficiency(parsed: ParsedSession): EfficiencyReport {
     const ownerIdx = turnOrderByUuid.get(tu.parentTurn) ?? -1;
     const turnsAfter = ownerIdx >= 0 ? Math.max(0, turns.length - 1 - ownerIdx) : 0;
     const estTokens = Math.round(tu.resultFull.length / 4);
-    // Cache-read carries: every subsequent turn re-loads this in cached input at ~0.1x cost.
     const estCarriedTokens = estTokens * turnsAfter;
+    const model = modelFor(tu.parentTurn);
+    // Marginal: written to cache once + re-read every subsequent turn at cacheRead rate
+    const wastedCostUsd =
+      priceTokens(model, "cacheCreate", estTokens) +
+      priceTokens(model, "cacheRead", estCarriedTokens);
+    // Upper bound: priced as fresh input across (turnsAfter + 1) appearances
+    const wastedCostUpperUsd = priceTokens(model, "input", estTokens * (turnsAfter + 1));
+    bloatUsd += wastedCostUsd;
+    wastedUpperUsd += wastedCostUpperUsd;
     findings.push({
       kind: "tool_output_explosion",
       label: tu.name,
@@ -119,6 +168,9 @@ export function deriveEfficiency(parsed: ParsedSession): EfficiencyReport {
         estTokens,
         turnsAfter,
         estCarriedTokens,
+        model,
+        wastedCostUsd,
+        wastedCostUpperUsd,
       },
     });
   }
@@ -143,6 +195,9 @@ export function deriveEfficiency(parsed: ParsedSession): EfficiencyReport {
     totalReads,
     totalTools: totalToolsCounted,
     findings,
+    wastedCostUsd: reReadUsd + bloatUsd,
+    wastedCostUpperUsd: wastedUpperUsd,
+    wastedCostBreakdown: { reReadUsd, bloatUsd },
   };
 }
 
@@ -160,6 +215,10 @@ export function aggregateEfficiency(
   let scoreNum = 0;
   let totalReads = 0;
   let totalTools = 0;
+  let wastedCostUsd = 0;
+  let wastedCostUpperUsd = 0;
+  let wastedReReadUsd = 0;
+  let wastedBloatUsd = 0;
   const findings: AntiPatternFinding[] = [];
 
   for (const { report, weight } of parts) {
@@ -167,17 +226,18 @@ export function aggregateEfficiency(
     if (report.grade === "N/A") continue;
     wSum += weight;
     scoreNum += report.score * weight;
-    // For ratio aggregation we reconstruct numerator/denom from the report counts.
-    // Cache: weight by total cache+input tokens; approximated by `weight`.
     cacheNum += report.cacheHitRate * weight;
     cacheDen += weight;
-    // re-read & bloat weighted by their respective denominators
     reReadNum += report.reReadWaste * report.totalReads;
     reReadDen += report.totalReads;
     bloatNum += report.toolBloat * report.totalTools;
     bloatDen += report.totalTools;
     totalReads += report.totalReads;
     totalTools += report.totalTools;
+    wastedCostUsd += report.wastedCostUsd;
+    wastedCostUpperUsd += report.wastedCostUpperUsd;
+    wastedReReadUsd += report.wastedCostBreakdown.reReadUsd;
+    wastedBloatUsd += report.wastedCostBreakdown.bloatUsd;
     findings.push(...report.findings);
   }
 
@@ -191,6 +251,9 @@ export function aggregateEfficiency(
       totalReads: 0,
       totalTools: 0,
       findings: [],
+      wastedCostUsd: 0,
+      wastedCostUpperUsd: 0,
+      wastedCostBreakdown: { reReadUsd: 0, bloatUsd: 0 },
     };
   }
 
@@ -203,7 +266,10 @@ export function aggregateEfficiency(
     toolBloat: bloatDen > 0 ? bloatNum / bloatDen : 0,
     totalReads,
     totalTools,
-    findings, // not displayed at project level, but kept for drill-down later
+    findings,
+    wastedCostUsd,
+    wastedCostUpperUsd,
+    wastedCostBreakdown: { reReadUsd: wastedReReadUsd, bloatUsd: wastedBloatUsd },
   };
 }
 

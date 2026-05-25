@@ -100,6 +100,9 @@ export type EfficiencyReport = {
   totalReads: number;
   totalTools: number;
   findings: AntiPatternFinding[];
+  wastedCostUsd: number; // marginal (cache-aware) USD across all findings
+  wastedCostUpperUsd: number; // upper bound: same tokens priced as fresh input
+  wastedCostBreakdown: { reReadUsd: number; bloatUsd: number };
 };
 
 export type AntiPatternKind = "re_grep_loop" | "tool_output_explosion";
@@ -127,7 +130,14 @@ export type ReReadReason =
 
 export type ReReadDetail = {
   filePath: string;
-  reads: { ts: string; turnUuid: string; reason: ReReadReason }[];
+  reads: {
+    ts: string;
+    turnUuid: string;
+    reason: ReReadReason;
+    chars: number; // tool_result size returned to Claude
+    wastedCostUsd: number; // 0 for first_read; cache-aware marginal $
+    wastedCostUpperUsd: number; // priced as fresh input
+  }[];
 };
 
 export type BloatDetail = {
@@ -137,6 +147,9 @@ export type BloatDetail = {
   estTokens: number; // ~chars/4
   turnsAfter: number; // # turns this stayed in cache for subsequent reads
   estCarriedTokens: number; // est extra cached-input tokens caused
+  model: string; // model on the owner turn — used for pricing
+  wastedCostUsd: number; // cacheCreate + turnsAfter × cacheRead
+  wastedCostUpperUsd: number; // priced as fresh input across (turnsAfter + 1)
 };
 
 export type LeaderboardRow = {

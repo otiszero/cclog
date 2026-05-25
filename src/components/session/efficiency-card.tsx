@@ -6,6 +6,8 @@ import type {
   EfficiencyReport,
   ReReadReason,
 } from "@/lib/types";
+import { formatCost } from "@/lib/format";
+import { PRICING_AS_OF } from "@/lib/pricing";
 
 const GRADE_COLOR: Record<EfficiencyGrade, string> = {
   A: "var(--positive)",
@@ -118,6 +120,12 @@ export function EfficiencyCard({ report }: { report: EfficiencyReport }) {
             ok={report.toolBloat <= 0.2 || report.totalTools === 0}
             hint={`Tool calls returning ≥10kB / total.\n>20% means unfiltered output contaminating context.\n${report.totalTools} tools tracked.`}
           />
+          <Metric
+            label="Wasted ~$"
+            value={formatCost(report.wastedCostUsd)}
+            ok={report.wastedCostUsd < 0.5}
+            hint={`Estimated extra USD this session spent on re-reads + bloated tool outputs.\n\nMarginal (cache-aware): ${formatCost(report.wastedCostUsd)}\n  • re-reads: ${formatCost(report.wastedCostBreakdown.reReadUsd)}\n  • bloat: ${formatCost(report.wastedCostBreakdown.bloatUsd)}\n\nUpper bound (if no cache): ${formatCost(report.wastedCostUpperUsd)}\n\nPriced per actual turn's model · rates as of ${PRICING_AS_OF}.\nResult bytes are capped at 200kB by the parser — very large reads may be undercount.`}
+          />
         </div>
         {report.findings.length > 0 ? (
           <button
@@ -186,6 +194,8 @@ function ReReadDetailView({ d }: { d: NonNullable<AntiPatternFinding["reReadDeta
             <th className="text-left">#</th>
             <th className="text-left">Time</th>
             <th className="text-left">Likely cause</th>
+            <th className="text-right">Size</th>
+            <th className="text-right">Extra cost</th>
           </tr>
         </thead>
         <tbody>
@@ -198,6 +208,19 @@ function ReReadDetailView({ d }: { d: NonNullable<AntiPatternFinding["reReadDeta
                   {REASON_LABEL[r.reason]}
                   {r.reason === "first_read" ? " (necessary)" : " ⚠"}
                 </span>
+              </td>
+              <td className="num text-right">
+                {r.chars > 0 ? `${(r.chars / 1024).toFixed(1)}kB` : "—"}
+              </td>
+              <td
+                className="num text-right"
+                title={
+                  r.reason === "first_read"
+                    ? "Initial read — not waste."
+                    : `Marginal: ${formatCost(r.wastedCostUsd)}\nUpper bound (no cache): ${formatCost(r.wastedCostUpperUsd)}`
+                }
+              >
+                {r.reason === "first_read" ? "—" : `+${formatCost(r.wastedCostUsd)}`}
               </td>
             </tr>
           ))}
@@ -231,6 +254,13 @@ function BloatDetailView({ d }: { d: NonNullable<AntiPatternFinding["bloatDetail
           <span style={{ color: "var(--muted)" }}>
             {" "}
             ({formatN(d.estTokens)} × {d.turnsAfter})
+          </span>
+        </li>
+        <li>
+          Marginal cost: <strong>{formatCost(d.wastedCostUsd)}</strong>
+          <span style={{ color: "var(--muted)" }}>
+            {" "}
+            (upper bound without cache: {formatCost(d.wastedCostUpperUsd)} · model: {d.model})
           </span>
         </li>
       </ul>

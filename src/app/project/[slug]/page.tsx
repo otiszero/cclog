@@ -32,7 +32,7 @@ export default async function ProjectPage({
         </p>
       </header>
 
-      <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard label="Sessions" value={String(p.sessionCount)} />
         <KpiCard label="Tokens" value={formatTokens(sumTokens(p.lifetimeTokens))} />
         <KpiCard label="Est. cost" value={formatCost(p.estCostUsd)} />
@@ -41,6 +41,11 @@ export default async function ProjectPage({
           label="Efficiency"
           value={p.efficiency.grade}
           sub={p.efficiency.grade === "N/A" ? "—" : `${p.efficiency.score}/100 · token-weighted`}
+        />
+        <KpiCard
+          label="Wasted ~$"
+          value={formatCost(p.efficiency.wastedCostUsd)}
+          sub={`upper bound: ${formatCost(p.efficiency.wastedCostUpperUsd)}`}
         />
       </section>
 
@@ -87,6 +92,7 @@ export default async function ProjectPage({
                 <th className="text-right">Turns</th>
                 <th className="text-right">Tokens</th>
                 <th className="text-right">Cost</th>
+                <th className="text-right">Wasted</th>
                 <th className="text-center">Eff.</th>
                 <th>Session</th>
               </tr>
@@ -101,6 +107,17 @@ export default async function ProjectPage({
                   <td className="text-right">{s.turnCount}</td>
                   <td className="text-right">{formatTokens(sumTokens(s.totalTokens))}</td>
                   <td className="text-right">{formatCost(s.estCostUsd)}</td>
+                  <td
+                    className="text-right num"
+                    title={`Marginal: ${formatCost(s.efficiency.wastedCostUsd)}\nUpper bound (no cache): ${formatCost(s.efficiency.wastedCostUpperUsd)}`}
+                    style={{
+                      color: s.efficiency.wastedCostUsd > 0.5 ? "#ef4444" : undefined,
+                    }}
+                  >
+                    {s.efficiency.wastedCostUsd > 0
+                      ? formatCost(s.efficiency.wastedCostUsd)
+                      : "—"}
+                  </td>
                   <td className="text-center">
                     <EfficiencyBadge grade={s.efficiency.grade} score={s.efficiency.score} />
                   </td>
