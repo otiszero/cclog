@@ -86,6 +86,57 @@ export type SessionMeta = {
   models: string[];
   estCostUsd: number;
   fileBytes: number;
+  efficiency: EfficiencyReport;
+};
+
+export type EfficiencyGrade = "A" | "B" | "C" | "D" | "F" | "N/A";
+
+export type EfficiencyReport = {
+  score: number; // 0-100
+  grade: EfficiencyGrade;
+  cacheHitRate: number; // 0-1; cacheRead / (cacheRead + input)
+  reReadWaste: number; // 0-1; repeated reads / total reads
+  toolBloat: number; // 0-1; big tool outputs / all tool outputs
+  totalReads: number;
+  totalTools: number;
+  findings: AntiPatternFinding[];
+};
+
+export type AntiPatternKind = "re_grep_loop" | "tool_output_explosion";
+
+export type AntiPatternFinding = {
+  kind: AntiPatternKind;
+  // For re_grep_loop: the repeated file path; for tool_output_explosion: the tool name + size
+  label: string;
+  // Wasted/bloated bytes or repeat count for context
+  detail: string;
+  // Turn UUIDs flagged by this finding
+  turnUuids: string[];
+  // Rich detail per kind (one of these is set)
+  reReadDetail?: ReReadDetail;
+  bloatDetail?: BloatDetail;
+};
+
+export type ReReadReason =
+  | "first_read"
+  | "duplicate_same_batch"
+  | "re_verify_after_edit"
+  | "after_sub_agent"
+  | "context_drift"
+  | "unknown";
+
+export type ReReadDetail = {
+  filePath: string;
+  reads: { ts: string; turnUuid: string; reason: ReReadReason }[];
+};
+
+export type BloatDetail = {
+  toolName: string;
+  inputSummary: string; // short label of input (file path / command)
+  resultChars: number;
+  estTokens: number; // ~chars/4
+  turnsAfter: number; // # turns this stayed in cache for subsequent reads
+  estCarriedTokens: number; // est extra cached-input tokens caused
 };
 
 export type LeaderboardRow = {
@@ -108,4 +159,5 @@ export type ProjectSummary = {
   bySubAgent: LeaderboardRow[];
   dailyTokens: { date: string; tokens: number; cost: number }[];
   sessions: SessionMeta[];
+  efficiency: EfficiencyReport; // token-weighted across sessions
 };

@@ -12,7 +12,9 @@ import {
   sumTokens,
   totalTokens,
 } from "@/lib/parser/derive-metrics";
+import { deriveEfficiency } from "@/lib/parser/derive-efficiency";
 import { KpiCard } from "@/components/common/kpi-card";
+import { EfficiencyCard } from "@/components/session/efficiency-card";
 import { SessionTabs } from "@/components/session/session-tabs";
 import { formatCost, formatDuration, formatRelative, formatTokens } from "@/lib/format";
 
@@ -43,6 +45,7 @@ export default async function SessionPage({
       : 0;
   const turnCount = parsed.events.filter((e) => e.kind === "turn").length;
 
+  const efficiency = deriveEfficiency(parsed);
   const byTool = leaderboardByCategory(parsed, "tool");
   const byMcp = leaderboardByCategory(parsed, "mcp");
   const bySkill = leaderboardByCategory(parsed, "skill");
@@ -77,8 +80,11 @@ export default async function SessionPage({
         <KpiCard label="Est. cost" value={formatCost(cost)} sub={formatDuration(durationMs)} />
       </section>
 
+      <EfficiencyCard report={efficiency} />
+
       <SessionTabs
         parsed={parsed}
+        efficiency={efficiency}
         byTool={byTool}
         byMcp={byMcp}
         bySkill={bySkill}

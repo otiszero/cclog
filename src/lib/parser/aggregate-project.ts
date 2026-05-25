@@ -18,6 +18,7 @@ import {
   sumTokens,
   totalTokens,
 } from "./derive-metrics";
+import { aggregateEfficiency, deriveEfficiency } from "./derive-efficiency";
 
 const ZERO: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
 const cache = new Map<string, { mtime: number; summary: ProjectSummary }>();
@@ -65,6 +66,7 @@ export async function aggregateProject(slug: string): Promise<ProjectSummary> {
     cost += sessionCost;
     if (parsed.endedAt && (!lastActive || parsed.endedAt > lastActive)) lastActive = parsed.endedAt;
 
+    const efficiency = deriveEfficiency(parsed);
     sessions.push({
       sessionId: parsed.sessionId,
       filePath: parsed.filePath,
@@ -76,6 +78,7 @@ export async function aggregateProject(slug: string): Promise<ProjectSummary> {
       models: modelsUsed(parsed.events),
       estCostUsd: sessionCost,
       fileBytes: st.size,
+      efficiency,
     });
 
     mergeLeaderboard(toolGroup, leaderboardByCategory(parsed, "tool"));
@@ -109,6 +112,12 @@ export async function aggregateProject(slug: string): Promise<ProjectSummary> {
       .map(([date, v]) => ({ date, tokens: v.tokens, cost: v.cost }))
       .sort((a, b) => a.date.localeCompare(b.date)),
     sessions: sessions.sort((a, b) => (b.endedAt ?? "").localeCompare(a.endedAt ?? "")),
+    efficiency: aggregateEfficiency(
+      sessions.map((s) => ({
+        report: s.efficiency,
+        weight: sumTokens(s.totalTokens),
+      })),
+    ),
   };
 
   cache.set(slug, { mtime: newestMtime, summary });

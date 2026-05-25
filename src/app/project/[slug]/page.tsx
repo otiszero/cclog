@@ -3,6 +3,7 @@ import { aggregateProject } from "@/lib/parser/aggregate-project";
 import { KpiCard } from "@/components/common/kpi-card";
 import { LeaderboardCard } from "@/components/project/leaderboard-card";
 import { UsageTrendChart } from "@/components/global/usage-trend-chart";
+import { EfficiencyBadge } from "@/components/session/efficiency-card";
 import { formatCost, formatRelative, formatTokens } from "@/lib/format";
 import { sumTokens } from "@/lib/parser/derive-metrics";
 
@@ -31,11 +32,16 @@ export default async function ProjectPage({
         </p>
       </header>
 
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <KpiCard label="Sessions" value={String(p.sessionCount)} />
         <KpiCard label="Tokens" value={formatTokens(sumTokens(p.lifetimeTokens))} />
         <KpiCard label="Est. cost" value={formatCost(p.estCostUsd)} />
         <KpiCard label="Last active" value={formatRelative(p.lastActive)} />
+        <KpiCard
+          label="Efficiency"
+          value={p.efficiency.grade}
+          sub={p.efficiency.grade === "N/A" ? "—" : `${p.efficiency.score}/100 · token-weighted`}
+        />
       </section>
 
       {p.dailyTokens.length > 0 ? (
@@ -81,6 +87,7 @@ export default async function ProjectPage({
                 <th className="text-right">Turns</th>
                 <th className="text-right">Tokens</th>
                 <th className="text-right">Cost</th>
+                <th className="text-center">Eff.</th>
                 <th>Session</th>
               </tr>
             </thead>
@@ -94,6 +101,9 @@ export default async function ProjectPage({
                   <td className="text-right">{s.turnCount}</td>
                   <td className="text-right">{formatTokens(sumTokens(s.totalTokens))}</td>
                   <td className="text-right">{formatCost(s.estCostUsd)}</td>
+                  <td className="text-center">
+                    <EfficiencyBadge grade={s.efficiency.grade} score={s.efficiency.score} />
+                  </td>
                   <td>
                     <Link
                       href={`/project/${encodeURIComponent(p.slug)}/session/${s.sessionId}`}

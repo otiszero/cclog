@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import type { SessionEvent, UserPromptSource } from "@/lib/types";
+import type { AntiPatternFinding, SessionEvent, UserPromptSource } from "@/lib/types";
 import { formatCost, formatDuration, formatTokens } from "@/lib/format";
 import { estimateCost } from "@/lib/pricing";
 import { categorizeTool, toolDisplayName } from "@/lib/parser/categorize-tool";
@@ -10,6 +10,12 @@ import { TimelineDetailDrawer, type DetailItem } from "./timeline-detail-drawer"
 
 type TimelineProps = {
   events: SessionEvent[];
+  findingsByTurn?: Map<string, AntiPatternFinding[]>;
+};
+
+const FINDING_LABEL: Record<AntiPatternFinding["kind"], string> = {
+  re_grep_loop: "re-read loop",
+  tool_output_explosion: "big tool output",
 };
 
 type TurnEv = Extract<SessionEvent, { kind: "turn" }>;
@@ -108,7 +114,7 @@ export function parseSlashCommand(text: string): { name: string; args: string } 
   };
 }
 
-export function TimelineWaterfall({ events }: TimelineProps) {
+export function TimelineWaterfall({ events, findingsByTurn }: TimelineProps) {
   const [selected, setSelected] = useState<DetailItem | null>(null);
   const [expandAll, setExpandAll] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -281,6 +287,7 @@ export function TimelineWaterfall({ events }: TimelineProps) {
               onSelectTool={(t) => setSelected({ kind: "tool", data: t })}
               maxTotal={maxTotal}
               maxWork={maxWork}
+              findingsByTurn={findingsByTurn}
             />
           ) : (
             <TurnRow
@@ -288,6 +295,7 @@ export function TimelineWaterfall({ events }: TimelineProps) {
               node={r.node}
               maxTotal={maxTotal}
               maxWork={maxWork}
+              findings={findingsByTurn?.get(r.node.ev.uuid)}
               onClick={() =>
                 setSelected({
                   kind: "turn",
@@ -355,6 +363,7 @@ function PromptGroupRow({
   onSelectTool,
   maxTotal,
   maxWork,
+  findingsByTurn,
 }: {
   row: Extract<TimelineRow, { kind: "prompt_group" }>;
   expanded: boolean;
@@ -364,6 +373,7 @@ function PromptGroupRow({
   onSelectTool: (t: ToolEv) => void;
   maxTotal: number;
   maxWork: number;
+  findingsByTurn?: Map<string, AntiPatternFinding[]>;
 }) {
   const { group, deltaMs, turns } = row;
   const primary = group.primary;
@@ -475,6 +485,7 @@ function PromptGroupRow({
               node={node}
               maxTotal={maxTotal}
               maxWork={maxWork}
+              findings={findingsByTurn?.get(node.ev.uuid)}
               onClick={() => onSelectTurn(node)}
               onToolClick={onSelectTool}
             />
@@ -526,17 +537,25 @@ function TurnRow({
   maxWork,
   onClick,
   onToolClick,
+  findings,
 }: {
   node: TurnNode;
   maxTotal: number;
   maxWork: number;
   onClick: () => void;
   onToolClick: (tool: ToolEv) => void;
+  findings?: AntiPatternFinding[];
 }) {
   const { ev, toolEvents, subAgents, deltaMs } = node;
   const u = ev.usage;
   const totalTokens = u.input + u.output + u.cacheRead + u.cacheCreate;
   const cost = estimateCost(ev.model, u);
+  const flagged = (findings?.length ?? 0) > 0;
+  const flagTitle = flagged
+    ? findings!
+        .map((f) => `${FINDING_LABEL[f.kind]}: ${f.label} (${f.detail})`)
+        .join("\n")
+    : "";
   return (
     <div
       role="button"
@@ -549,7 +568,10 @@ function TurnRow({
         }
       }}
       className="rounded-md border px-3 py-2 flex flex-col gap-1 text-left cursor-pointer hover:bg-black/[0.02]"
-      style={{ borderColor: "var(--border)" }}
+      style={{
+        borderColor: flagged ? "#ef4444" : "var(--border)",
+        background: flagged ? "color-mix(in srgb, #ef4444 5%, transparent)" : undefined,
+      }}
     >
       <div className="flex items-center gap-2 text-sm flex-wrap">
         <BotIcon />
@@ -594,6 +616,15 @@ function TurnRow({
             title="These tools were emitted in a single assistant message — Claude Code runs them concurrently. Per-tool timing is not recorded in the JSONL."
           >
             parallel
+          </span>
+        ) : null}
+        {flagged ? (
+          <span
+            className="tag"
+            style={{ color: "#ef4444", borderColor: "#ef4444" }}
+            title={flagTitle}
+          >
+            ⚑ {findings!.length === 1 ? FINDING_LABEL[findings![0].kind] : `${findings!.length} flags`}
           </span>
         ) : null}
         {subAgents.length > 0 ? (

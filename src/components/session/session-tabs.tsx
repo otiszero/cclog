@@ -1,10 +1,11 @@
 "use client";
-import { useState } from "react";
-import type { ParsedSession } from "@/lib/types";
+import { useMemo, useState } from "react";
+import type { EfficiencyReport, ParsedSession } from "@/lib/types";
 import { TimelineWaterfall } from "./timeline-waterfall";
 import { TokensStackedChart } from "./tokens-stacked-chart";
 import { PromptViewer } from "./prompt-viewer";
 import { turnSeries } from "@/lib/parser/derive-metrics";
+import { findingsByTurn } from "@/lib/parser/derive-efficiency";
 import { LeaderboardCard } from "@/components/project/leaderboard-card";
 import type { LeaderboardRow } from "@/lib/types";
 
@@ -12,17 +13,20 @@ type Tab = "timeline" | "tokens" | "prompts";
 
 export function SessionTabs({
   parsed,
+  efficiency,
   byTool,
   byMcp,
   bySkill,
   bySubAgent,
 }: {
   parsed: ParsedSession;
+  efficiency: EfficiencyReport;
   byTool: LeaderboardRow[];
   byMcp: LeaderboardRow[];
   bySkill: LeaderboardRow[];
   bySubAgent: LeaderboardRow[];
 }) {
+  const findings = useMemo(() => findingsByTurn(efficiency), [efficiency]);
   const [tab, setTab] = useState<Tab>("timeline");
   const series = turnSeries(parsed);
 
@@ -45,7 +49,9 @@ export function SessionTabs({
         ))}
       </div>
 
-      {tab === "timeline" ? <TimelineWaterfall events={parsed.events} /> : null}
+      {tab === "timeline" ? (
+        <TimelineWaterfall events={parsed.events} findingsByTurn={findings} />
+      ) : null}
 
       {tab === "tokens" ? (
         <div className="flex flex-col gap-4">
