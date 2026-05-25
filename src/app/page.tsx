@@ -5,6 +5,7 @@ import { UsageTrendChart } from "@/components/global/usage-trend-chart";
 import { ModelDonut } from "@/components/global/model-donut";
 import { LeaderboardCard } from "@/components/project/leaderboard-card";
 import { EmptyState } from "@/components/common/empty-state";
+import { EfficiencyBadge } from "@/components/session/efficiency-card";
 import { formatCost, formatRelative, formatTokens } from "@/lib/format";
 import { sumTokens } from "@/lib/parser/derive-metrics";
 
@@ -69,6 +70,12 @@ export default async function HomePage() {
                       Cost
                     </th>
                     <th scope="col" className="text-right num">
+                      Wasted
+                    </th>
+                    <th scope="col" className="text-center">
+                      Eff.
+                    </th>
+                    <th scope="col" className="text-right num">
                       Last active
                     </th>
                   </tr>
@@ -90,6 +97,26 @@ export default async function HomePage() {
                       </td>
                       <td className="text-right num">
                         {formatCost(p.estCostUsd)}
+                      </td>
+                      <td
+                        className="text-right num"
+                        title={`Marginal: ${formatCost(p.efficiency.wastedCostUsd)}\nUpper bound (no cache): ${formatCost(p.efficiency.wastedCostUpperUsd)}`}
+                        style={{
+                          color:
+                            p.efficiency.wastedCostUsd > 0.5
+                              ? "#ef4444"
+                              : undefined,
+                        }}
+                      >
+                        {p.efficiency.wastedCostUsd > 0
+                          ? formatCost(p.efficiency.wastedCostUsd)
+                          : "—"}
+                      </td>
+                      <td className="text-center">
+                        <EfficiencyBadge
+                          grade={p.efficiency.grade}
+                          score={p.efficiency.score}
+                        />
                       </td>
                       <td className="text-right num">
                         {formatRelative(p.lastActive)}

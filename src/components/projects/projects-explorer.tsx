@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatCost, formatRelative, formatTokens } from "@/lib/format";
+import { EfficiencyBadge } from "@/components/session/efficiency-card";
+import type { EfficiencyGrade } from "@/lib/types";
 import { Combobox } from "./combobox";
 
 export type ProjectRow = {
@@ -14,9 +16,20 @@ export type ProjectRow = {
   lastActive?: string;
   lastActiveMs: number;
   models: string[];
+  wastedCostUsd: number;
+  wastedCostUpperUsd: number;
+  efficiencyGrade: EfficiencyGrade;
+  efficiencyScore: number;
 };
 
-type SortKey = "project" | "sessions" | "tokens" | "cost" | "lastActive";
+type SortKey =
+  | "project"
+  | "sessions"
+  | "tokens"
+  | "cost"
+  | "wasted"
+  | "efficiency"
+  | "lastActive";
 type SortDir = "asc" | "desc";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
@@ -86,6 +99,17 @@ export function ProjectsExplorer({
           return (a.tokens - b.tokens) * dir;
         case "cost":
           return (a.cost - b.cost) * dir;
+        case "wasted":
+          return (a.wastedCostUsd - b.wastedCostUsd) * dir;
+        case "efficiency": {
+          // N/A sinks to bottom regardless of sort dir
+          const aNA = a.efficiencyGrade === "N/A";
+          const bNA = b.efficiencyGrade === "N/A";
+          if (aNA && bNA) return 0;
+          if (aNA) return 1;
+          if (bNA) return -1;
+          return (a.efficiencyScore - b.efficiencyScore) * dir;
+        }
         case "lastActive":
         default:
           return (a.lastActiveMs - b.lastActiveMs) * dir;
@@ -241,6 +265,22 @@ export function ProjectsExplorer({
                   onSort={onSort}
                 />
                 <SortHeader
+                  label="Wasted"
+                  k="wasted"
+                  align="right"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortHeader
+                  label="Eff."
+                  k="efficiency"
+                  align="center"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortHeader
                   label="Last active"
                   k="lastActive"
                   align="right"
@@ -264,6 +304,21 @@ export function ProjectsExplorer({
                   <td className="text-right num">{p.sessionCount}</td>
                   <td className="text-right num">{formatTokens(p.tokens)}</td>
                   <td className="text-right num">{formatCost(p.cost)}</td>
+                  <td
+                    className="text-right num"
+                    title={`Marginal: ${formatCost(p.wastedCostUsd)}\nUpper bound (no cache): ${formatCost(p.wastedCostUpperUsd)}`}
+                    style={{
+                      color: p.wastedCostUsd > 0.5 ? "#ef4444" : undefined,
+                    }}
+                  >
+                    {p.wastedCostUsd > 0 ? formatCost(p.wastedCostUsd) : "—"}
+                  </td>
+                  <td className="text-center">
+                    <EfficiencyBadge
+                      grade={p.efficiencyGrade}
+                      score={p.efficiencyScore}
+                    />
+                  </td>
                   <td className="text-right">{formatRelative(p.lastActive)}</td>
                 </tr>
               ))}
@@ -343,7 +398,7 @@ function SortHeader({
 }: {
   label: string;
   k: SortKey;
-  align?: "right";
+  align?: "right" | "center";
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (k: SortKey) => void;
@@ -352,7 +407,9 @@ function SortHeader({
   const arrow = active ? (sortDir === "asc" ? "▲" : "▼") : "";
   return (
     <th
-      className={align === "right" ? "text-right" : ""}
+      className={
+        align === "right" ? "text-right" : align === "center" ? "text-center" : ""
+      }
       style={{ cursor: "pointer", userSelect: "none" }}
     >
       <button

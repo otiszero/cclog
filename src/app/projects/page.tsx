@@ -33,6 +33,10 @@ export default async function ProjectsPage() {
       lastActive: p.lastActive,
       lastActiveMs: p.lastActive ? new Date(p.lastActive).getTime() : 0,
       models: [...modelSet].sort(),
+      wastedCostUsd: p.efficiency.wastedCostUsd,
+      wastedCostUpperUsd: p.efficiency.wastedCostUpperUsd,
+      efficiencyGrade: p.efficiency.grade,
+      efficiencyScore: p.efficiency.score,
     };
   });
 
