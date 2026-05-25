@@ -4,14 +4,39 @@ Local web UI to explore your Claude Code session logs. Reads `~/.claude/projects
 and surfaces token usage, sub-agents, tools, MCP and skills with charts, timelines, and
 full-text prompt search. Everything runs on your machine; nothing is sent anywhere.
 
-## Run
+## Install (CLI)
+
+Requires Node.js ≥ 20.
+
+```bash
+# one-off
+npx cclog
+
+# or install globally
+npm i -g cclog
+cclog
+```
+
+The dashboard opens at http://127.0.0.1:3000.
+
+```
+cclog [options]
+  -p, --port <n>          Port (default 3000, auto-bumps if taken)
+  -H, --host <addr>       Host (default 127.0.0.1)
+      --claude-home <dir> Path to .claude (default ~/.claude)
+      --no-open           Don't open browser
+  -h, --help              Help
+  -v, --version           Version
+```
+
+## Run from source
 
 ```bash
 pnpm install
 pnpm dev          # http://localhost:3000
 ```
 
-Optional: point at a different Claude config dir.
+Point at a different Claude config dir:
 
 ```bash
 CLAUDE_HOME=/path/to/.claude pnpm dev
@@ -87,4 +112,4 @@ Next.js 16 (App Router) · TypeScript · Tailwind v4 · Recharts · Fuse.js · r
 
 ## License
 
-Personal use.
+MIT — see [LICENSE](./LICENSE).

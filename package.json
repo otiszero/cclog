@@ -1,12 +1,40 @@
 {
   "name": "cclog",
   "version": "0.1.0",
-  "private": true,
+  "description": "Local dashboard for Claude Code session logs — token usage, sub-agents, tools, MCP, skills, timelines, prompt search.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "dashboard",
+    "cli",
+    "anthropic",
+    "tokens",
+    "observability"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cclog/cclog.git"
+  },
+  "bin": {
+    "cclog": "bin/cclog.js"
+  },
+  "files": [
+    "bin",
+    ".next/standalone",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && node scripts/prepare-standalone.js",
     "start": "next start",
-    "lint": "eslint"
+    "start:cli": "node bin/cclog.js",
+    "lint": "eslint",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
     "clsx": "^2.1.1",
