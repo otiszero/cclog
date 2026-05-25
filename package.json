@@ -12,10 +12,15 @@
     "observability"
   ],
   "license": "MIT",
+  "author": "Otis Hoang <otis.hoang@cratius.holdings>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cclog/cclog.git"
+    "url": "git+https://github.com/otiszero/cclog.git"
   },
+  "bugs": {
+    "url": "https://github.com/otiszero/cclog/issues"
+  },
+  "homepage": "https://github.com/otiszero/cclog#readme",
   "bin": {
     "cclog": "bin/cclog.js"
   },
