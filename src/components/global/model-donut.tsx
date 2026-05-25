@@ -30,8 +30,8 @@ export function ModelDonut({
     .sort((a, b) => b.tokens - a.tokens);
 
   return (
-    <div className="flex flex-col md:flex-row md:items-center gap-4">
-      <div className="shrink-0" style={{ width: 200, height: 200 }}>
+    <div className="flex flex-col items-center gap-3">
+      <div className="shrink-0" style={{ width: 180, height: 180 }}>
         <ResponsiveContainer>
           <PieChart>
             <Pie
@@ -62,22 +62,22 @@ export function ModelDonut({
         </ResponsiveContainer>
       </div>
 
-      <ul className="flex-1 flex flex-col gap-1.5 text-xs min-w-0">
+      <ul className="w-full flex flex-col gap-1.5 text-xs min-w-0">
         {sorted.map((d) => {
           const share = totalTokens > 0 ? (d.tokens / totalTokens) * 100 : 0;
           return (
             <li
               key={d.model}
-              className="grid items-center gap-2"
-              style={{ gridTemplateColumns: "10px 1fr auto auto auto" }}
+              className="grid items-center gap-2 min-w-0"
+              style={{ gridTemplateColumns: "10px minmax(0,1fr) auto auto auto" }}
             >
               <span
                 aria-hidden
                 className="inline-block rounded-sm"
                 style={{ width: 10, height: 10, background: d.color }}
               />
-              <span className="truncate font-medium" title={d.model}>
-                {d.model}
+              <span className="truncate font-medium min-w-0" title={d.model}>
+                {shortenModel(d.model)}
               </span>
               <span className="num tabular-nums" style={{ color: "var(--foreground-muted)" }}>
                 {share.toFixed(1)}%
@@ -85,7 +85,7 @@ export function ModelDonut({
               <span className="num tabular-nums">{formatTokens(d.tokens)}</span>
               <span
                 className="num tabular-nums"
-                style={{ color: "var(--foreground-muted)", minWidth: 56, textAlign: "right" }}
+                style={{ color: "var(--foreground-muted)", minWidth: 52, textAlign: "right" }}
               >
                 {formatCost(d.cost)}
               </span>
@@ -93,9 +93,9 @@ export function ModelDonut({
           );
         })}
         <li
-          className="grid items-center gap-2 pt-1.5 mt-0.5 border-t"
+          className="grid items-center gap-2 pt-1.5 mt-0.5 border-t min-w-0"
           style={{
-            gridTemplateColumns: "10px 1fr auto auto auto",
+            gridTemplateColumns: "10px minmax(0,1fr) auto auto auto",
             borderColor: "var(--border)",
             color: "var(--foreground-muted)",
           }}
@@ -106,11 +106,16 @@ export function ModelDonut({
           </span>
           <span />
           <span className="num tabular-nums">{formatTokens(totalTokens)}</span>
-          <span className="num tabular-nums" style={{ minWidth: 56, textAlign: "right" }}>
+          <span className="num tabular-nums" style={{ minWidth: 52, textAlign: "right" }}>
             {formatCost(totalCost)}
           </span>
         </li>
       </ul>
     </div>
   );
+}
+
+// Strip trailing -YYYYMMDD date stamps (full name kept in tooltip).
+function shortenModel(name: string): string {
+  return name.replace(/-\d{8}$/, "");
 }
