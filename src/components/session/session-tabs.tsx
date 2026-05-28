@@ -50,7 +50,11 @@ export function SessionTabs({
       </div>
 
       {tab === "timeline" ? (
-        <TimelineWaterfall events={parsed.events} findingsByTurn={findings} />
+        <TimelineWaterfall
+          events={parsed.events}
+          findingsByTurn={findings}
+          windowPressure={efficiency.windowPressure}
+        />
       ) : null}
 
       {tab === "tokens" ? (

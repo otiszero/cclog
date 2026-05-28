@@ -11,11 +11,17 @@ import { TimelineDetailDrawer, type DetailItem } from "./timeline-detail-drawer"
 type TimelineProps = {
   events: SessionEvent[];
   findingsByTurn?: Map<string, AntiPatternFinding[]>;
+  // Per-turn window pressure (0-1), aligned with assistant turn events in order.
+  windowPressure?: number[];
 };
 
 const FINDING_LABEL: Record<AntiPatternFinding["kind"], string> = {
   re_grep_loop: "re-read loop",
   tool_output_explosion: "big tool output",
+  retry_loop: "retry loop",
+  flailing_edit: "flailing edits",
+  lost_in_middle: "lost in middle",
+  should_have_compacted: "should have compacted",
 };
 
 type TurnEv = Extract<SessionEvent, { kind: "turn" }>;
@@ -114,7 +120,7 @@ export function parseSlashCommand(text: string): { name: string; args: string } 
   };
 }
 
-export function TimelineWaterfall({ events, findingsByTurn }: TimelineProps) {
+export function TimelineWaterfall({ events, findingsByTurn, windowPressure }: TimelineProps) {
   const [selected, setSelected] = useState<DetailItem | null>(null);
   const [expandAll, setExpandAll] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -196,6 +202,18 @@ export function TimelineWaterfall({ events, findingsByTurn }: TimelineProps) {
     finalizePrompt();
     return out;
   }, [events]);
+
+  const pressureByTurn = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!windowPressure || windowPressure.length === 0) return m;
+    let i = 0;
+    for (const e of events) {
+      if (e.kind !== "turn") continue;
+      const p = windowPressure[i++];
+      if (typeof p === "number") m.set(e.uuid, p);
+    }
+    return m;
+  }, [events, windowPressure]);
 
   const { maxTotal, maxWork } = useMemo(() => {
     let total = 1;
@@ -288,6 +306,7 @@ export function TimelineWaterfall({ events, findingsByTurn }: TimelineProps) {
               maxTotal={maxTotal}
               maxWork={maxWork}
               findingsByTurn={findingsByTurn}
+              pressureByTurn={pressureByTurn}
             />
           ) : (
             <TurnRow
@@ -296,6 +315,7 @@ export function TimelineWaterfall({ events, findingsByTurn }: TimelineProps) {
               maxTotal={maxTotal}
               maxWork={maxWork}
               findings={findingsByTurn?.get(r.node.ev.uuid)}
+              pressure={pressureByTurn.get(r.node.ev.uuid)}
               onClick={() =>
                 setSelected({
                   kind: "turn",
@@ -364,6 +384,7 @@ function PromptGroupRow({
   maxTotal,
   maxWork,
   findingsByTurn,
+  pressureByTurn,
 }: {
   row: Extract<TimelineRow, { kind: "prompt_group" }>;
   expanded: boolean;
@@ -374,6 +395,7 @@ function PromptGroupRow({
   maxTotal: number;
   maxWork: number;
   findingsByTurn?: Map<string, AntiPatternFinding[]>;
+  pressureByTurn: Map<string, number>;
 }) {
   const { group, deltaMs, turns } = row;
   const primary = group.primary;
@@ -486,6 +508,7 @@ function PromptGroupRow({
               maxTotal={maxTotal}
               maxWork={maxWork}
               findings={findingsByTurn?.get(node.ev.uuid)}
+              pressure={pressureByTurn.get(node.ev.uuid)}
               onClick={() => onSelectTurn(node)}
               onToolClick={onSelectTool}
             />
@@ -538,6 +561,7 @@ function TurnRow({
   onClick,
   onToolClick,
   findings,
+  pressure,
 }: {
   node: TurnNode;
   maxTotal: number;
@@ -545,6 +569,7 @@ function TurnRow({
   onClick: () => void;
   onToolClick: (tool: ToolEv) => void;
   findings?: AntiPatternFinding[];
+  pressure?: number;
 }) {
   const { ev, toolEvents, subAgents, deltaMs } = node;
   const u = ev.usage;
@@ -644,6 +669,8 @@ function TurnRow({
 
       <TimelineTokenBar usage={ev.usage} model={ev.model} maxTotal={maxTotal} maxWork={maxWork} />
 
+      {typeof pressure === "number" ? <PressureBar pressure={pressure} /> : null}
+
       {toolEvents.length > 0 ? (
         <div className="flex flex-wrap gap-1 mt-1.5">
           {toolEvents.slice(0, 12).map((t, k) => {
@@ -671,6 +698,39 @@ function TurnRow({
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PressureBar({ pressure }: { pressure: number }) {
+  const pct = Math.max(0, Math.min(1, pressure));
+  const pctLabel = Math.round(pct * 100);
+  const color =
+    pct >= 0.8 ? "#ef4444" : pct >= 0.6 ? "var(--warning)" : "var(--positive)";
+  return (
+    <div
+      className="flex items-center gap-2 text-[10px] mt-0.5"
+      title={`Window pressure: ${pctLabel}% of 200k token context. ≥80% triggers a 'should have compacted' flag.`}
+    >
+      <span className="shrink-0 tabular-nums" style={{ color: "var(--muted)", minWidth: 30 }}>
+        ctx
+      </span>
+      <div
+        className="flex-1 h-1 rounded-full overflow-hidden"
+        style={{ background: "var(--border)" }}
+      >
+        <div
+          style={{
+            width: `${pctLabel}%`,
+            height: "100%",
+            background: color,
+            transition: "width 200ms",
+          }}
+        />
+      </div>
+      <span className="tabular-nums shrink-0" style={{ color, minWidth: 32 }}>
+        {pctLabel}%
+      </span>
     </div>
   );
 }

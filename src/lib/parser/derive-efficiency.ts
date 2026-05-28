@@ -7,6 +7,7 @@ import type {
   SessionEvent,
 } from "@/lib/types";
 import { estimateCost } from "@/lib/pricing";
+import { deriveWindowPressure } from "@/lib/parser/derive-window-pressure";
 
 // Price `n` tokens of a single kind for `model` — rides on existing estimateCost
 // instead of exposing raw rate tables.
@@ -30,6 +31,9 @@ const CACHE_GOAL = 0.9; // 90%+ healthy (research: Anthropic doc baseline)
 const BIG_TOOL_CHARS = 10_000; // single tool result threshold
 const REGREP_MIN = 3; // same file read 3+ times = loop
 const NA_MIN_TURNS = 3; // tiny sessions get N/A grade
+const RETRY_MIN_ATTEMPTS = 3; // same tool+input ≥3 times with ≥1 failure
+const RETRY_WINDOW_TURNS = 5; // attempts must cluster within N turns
+const FLAIL_MIN_EDITS = 4; // consecutive edits on same file
 
 // Score weights — sum to 100
 const W_CACHE = 40;
@@ -175,13 +179,100 @@ export function deriveEfficiency(parsed: ParsedSession): EfficiencyReport {
     });
   }
 
+  // --- Retry loops: same (tool, key input) repeated with ≥1 failure
+  // Grouped by `tool::summary`. Key = command (Bash), file_path (Edit/Write/Read),
+  // url (WebFetch), etc. — uses existing summarizeInput.
+  const retryGroups = new Map<
+    string,
+    { toolName: string; summary: string; tuList: Extract<SessionEvent, { kind: "tool_use" }>[] }
+  >();
+  for (const tu of tools) {
+    const summary = summarizeInput(tu.name, tu.input);
+    if (!summary) continue;
+    const key = `${tu.name}::${summary}`;
+    const cur = retryGroups.get(key) ?? { toolName: tu.name, summary, tuList: [] };
+    cur.tuList.push(tu);
+    retryGroups.set(key, cur);
+  }
+  for (const { toolName, summary, tuList } of retryGroups.values()) {
+    if (tuList.length < RETRY_MIN_ATTEMPTS) continue;
+    const failures = tuList.filter((t) => t.resultOk === false).length;
+    if (failures === 0) continue;
+    const orders = tuList.map((t) => turnOrderByUuid.get(t.parentTurn) ?? -1).filter((n) => n >= 0);
+    if (orders.length < RETRY_MIN_ATTEMPTS) continue;
+    const span = Math.max(...orders) - Math.min(...orders);
+    if (span > RETRY_WINDOW_TURNS * tuList.length) continue; // too spread out → not a loop
+    findings.push({
+      kind: "retry_loop",
+      label: `${toolName}: ${shortPath(summary)}`,
+      detail: `${tuList.length} attempts · ${failures} failed`,
+      turnUuids: [...new Set(tuList.map((t) => t.parentTurn))],
+      retryDetail: {
+        toolName,
+        inputSummary: summary,
+        attempts: tuList.length,
+        failures,
+      },
+    });
+  }
+
+  // --- Flailing edits: ≥N consecutive Edit/Write/MultiEdit on the same file
+  const editTools = tools.filter(
+    (t) => t.name === "Edit" || t.name === "Write" || t.name === "MultiEdit",
+  );
+  let runFile: string | null = null;
+  let runList: Extract<SessionEvent, { kind: "tool_use" }>[] = [];
+  const emitFlail = () => {
+    if (runFile && runList.length >= FLAIL_MIN_EDITS) {
+      const failures = runList.filter((t) => t.resultOk === false).length;
+      findings.push({
+        kind: "flailing_edit",
+        label: shortPath(runFile),
+        detail: `${runList.length} consecutive edits${failures ? ` · ${failures} failed` : ""}`,
+        turnUuids: [...new Set(runList.map((t) => t.parentTurn))],
+        flailDetail: { filePath: runFile, edits: runList.length, failures },
+      });
+    }
+    runFile = null;
+    runList = [];
+  };
+  for (const tu of editTools) {
+    const path = (tu.input as { file_path?: string } | null)?.file_path;
+    if (!path) {
+      emitFlail();
+      continue;
+    }
+    if (path === runFile) {
+      runList.push(tu);
+    } else {
+      emitFlail();
+      runFile = path;
+      runList = [tu];
+    }
+  }
+  emitFlail();
+
+  // --- M4: window pressure + lost-in-middle + should_have_compacted
+  const pressure = deriveWindowPressure(parsed);
+  findings.push(...pressure.findings);
+
   // --- Score (subscores 0-1 then weighted)
   const cacheScore = clamp01(cacheHitRate / CACHE_GOAL);
   const reReadScore = clamp01(1 - reReadWaste / 0.5);
   const bloatScore = clamp01(1 - toolBloat / 0.5);
-  const score = Math.round(
-    cacheScore * W_CACHE + reReadScore * W_REREAD + bloatScore * W_BLOAT,
+  const baseScore =
+    cacheScore * W_CACHE + reReadScore * W_REREAD + bloatScore * W_BLOAT;
+
+  // Light penalty (cap 5 pts) so context-engineering issues nudge grades down
+  // without shifting the existing A-F distribution materially.
+  const lostInMiddleCount = pressure.findings.filter(
+    (f) => f.kind === "lost_in_middle",
+  ).length;
+  const compactionHit = pressure.findings.some(
+    (f) => f.kind === "should_have_compacted",
   );
+  const penalty = Math.min(5, lostInMiddleCount + (compactionHit ? 2 : 0));
+  const score = Math.max(0, Math.round(baseScore - penalty));
 
   const grade: EfficiencyGrade =
     turns.length < NA_MIN_TURNS ? "N/A" : toGrade(score);
@@ -198,6 +289,9 @@ export function deriveEfficiency(parsed: ParsedSession): EfficiencyReport {
     wastedCostUsd: reReadUsd + bloatUsd,
     wastedCostUpperUsd: wastedUpperUsd,
     wastedCostBreakdown: { reReadUsd, bloatUsd },
+    windowPressure: pressure.windowPressure,
+    maxWindowPressure: pressure.maxWindowPressure,
+    maxPressureTurn: pressure.maxPressureTurn,
   };
 }
 
@@ -254,7 +348,20 @@ export function aggregateEfficiency(
       wastedCostUsd: 0,
       wastedCostUpperUsd: 0,
       wastedCostBreakdown: { reReadUsd: 0, bloatUsd: 0 },
+      windowPressure: [],
+      maxWindowPressure: 0,
+      maxPressureTurn: -1,
     };
+  }
+
+  // Project-level aggregate keeps the max across sessions; per-turn series
+  // doesn't make sense across files so we leave the array empty.
+  let aggMaxPressure = 0;
+  for (const { report } of parts) {
+    if (report.grade === "N/A") continue;
+    if (report.maxWindowPressure > aggMaxPressure) {
+      aggMaxPressure = report.maxWindowPressure;
+    }
   }
 
   const score = Math.round(scoreNum / wSum);
@@ -270,6 +377,9 @@ export function aggregateEfficiency(
     wastedCostUsd,
     wastedCostUpperUsd,
     wastedCostBreakdown: { reReadUsd: wastedReReadUsd, bloatUsd: wastedBloatUsd },
+    windowPressure: [],
+    maxWindowPressure: aggMaxPressure,
+    maxPressureTurn: -1,
   };
 }
 

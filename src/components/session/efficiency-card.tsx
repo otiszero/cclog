@@ -21,6 +21,10 @@ const GRADE_COLOR: Record<EfficiencyGrade, string> = {
 const KIND_LABEL: Record<AntiPatternFinding["kind"], string> = {
   re_grep_loop: "Re-read loop",
   tool_output_explosion: "Big tool output",
+  retry_loop: "Retry loop",
+  flailing_edit: "Flailing edits",
+  lost_in_middle: "Lost in middle",
+  should_have_compacted: "Should have compacted",
 };
 
 const REASON_LABEL: Record<ReReadReason, string> = {
@@ -139,6 +143,13 @@ export function EfficiencyCard({ report }: { report: EfficiencyReport }) {
         ) : null}
       </div>
 
+      {report.maxWindowPressure >= 0.8 && report.maxPressureTurn >= 0 ? (
+        <CompactionBadge
+          turn={report.maxPressureTurn}
+          pressurePct={Math.round(report.maxWindowPressure * 100)}
+        />
+      ) : null}
+
       {open && report.findings.length > 0 ? (
         <div
           className="flex flex-col gap-3 pt-3 border-t"
@@ -178,6 +189,78 @@ function FindingBlock({ f }: { f: AntiPatternFinding }) {
       </div>
       {f.reReadDetail ? <ReReadDetailView d={f.reReadDetail} /> : null}
       {f.bloatDetail ? <BloatDetailView d={f.bloatDetail} /> : null}
+      {f.lostInMiddleDetail ? <LostInMiddleDetailView d={f.lostInMiddleDetail} /> : null}
+      {f.compactionDetail ? <CompactionDetailView d={f.compactionDetail} /> : null}
+    </div>
+  );
+}
+
+function CompactionBadge({ turn, pressurePct }: { turn: number; pressurePct: number }) {
+  return (
+    <div
+      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs"
+      style={{
+        background: "color-mix(in srgb, #ef4444 8%, transparent)",
+        border: "1px solid color-mix(in srgb, #ef4444 40%, var(--border))",
+        color: "#ef4444",
+      }}
+      title="Window pressure crossed 80% — manual /compact (or restarting the session) would have reclaimed context for the rest of the conversation."
+    >
+      <span>⚠</span>
+      <span>
+        <strong>Should have compacted</strong> at turn {turn + 1} ({pressurePct}% of 200k window
+        full)
+      </span>
+    </div>
+  );
+}
+
+function LostInMiddleDetailView({
+  d,
+}: {
+  d: NonNullable<AntiPatternFinding["lostInMiddleDetail"]>;
+}) {
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <div className="font-mono break-all" style={{ color: "var(--muted)" }}>
+        {d.toolName} · {d.inputSummary}
+      </div>
+      <ul className="list-disc pl-5 flex flex-col gap-0.5">
+        <li>
+          Result size: <strong>{d.sizeKB.toFixed(1)} kB</strong>
+        </li>
+        <li>
+          Sits at <strong>{d.positionPct}%</strong> of the cumulative prompt — middle of the
+          context window, where LLM attention is weakest (lost-in-the-middle effect).
+        </li>
+      </ul>
+      <p className="text-xs italic" style={{ color: "var(--muted)" }}>
+        Tip: summarise or compact early. Large outputs in the middle of the prompt may be
+        effectively ignored even though they cost cache tokens.
+      </p>
+    </div>
+  );
+}
+
+function CompactionDetailView({
+  d,
+}: {
+  d: NonNullable<AntiPatternFinding["compactionDetail"]>;
+}) {
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <ul className="list-disc pl-5 flex flex-col gap-0.5">
+        <li>
+          Peak pressure: <strong>{d.pressurePct}%</strong> of {d.contextLimit.toLocaleString()}
+          {" "}tokens ({d.model})
+        </li>
+        <li>Turn index: {d.atTurn + 1}</li>
+      </ul>
+      <p className="text-xs italic" style={{ color: "var(--muted)" }}>
+        Tip: run <span className="font-mono">/compact</span> when the window crosses ~80%.
+        Past that point new context displaces old context and the model starts forgetting earlier
+        decisions.
+      </p>
     </div>
   );
 }
