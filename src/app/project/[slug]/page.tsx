@@ -2,6 +2,7 @@ import Link from "next/link";
 import { aggregateProject } from "@/lib/parser/aggregate-project";
 import { KpiCard } from "@/components/common/kpi-card";
 import { LeaderboardCard } from "@/components/project/leaderboard-card";
+import { HarnessPanel } from "@/components/project/harness-panel";
 import { UsageTrendChart } from "@/components/global/usage-trend-chart";
 import { EfficiencyBadge } from "@/components/session/efficiency-card";
 import { formatCost, formatRelative, formatTokens } from "@/lib/format";
@@ -79,6 +80,8 @@ export default async function ProjectPage({
         />
       </section>
 
+      <HarnessPanel report={p.harness} />
+
       <section className="card">
         <h3 className="text-sm font-semibold mb-3">Sessions</h3>
         {p.sessions.length === 0 ? (
@@ -92,45 +95,70 @@ export default async function ProjectPage({
                 <th className="text-right">Turns</th>
                 <th className="text-right">Tokens</th>
                 <th className="text-right">Cost</th>
+                <th className="text-right" title="z-score of cost vs project mean">Anom.</th>
+                <th className="text-right" title="Risky tool calls">Risk</th>
                 <th className="text-right">Wasted</th>
                 <th className="text-center">Eff.</th>
                 <th>Session</th>
               </tr>
             </thead>
             <tbody>
-              {p.sessions.map((s) => (
-                <tr key={s.sessionId}>
-                  <td>{formatRelative(s.startedAt)}</td>
-                  <td className="truncate max-w-[260px]" title={s.models.join(", ")}>
-                    {s.models.join(", ") || "—"}
-                  </td>
-                  <td className="text-right">{s.turnCount}</td>
-                  <td className="text-right">{formatTokens(sumTokens(s.totalTokens))}</td>
-                  <td className="text-right">{formatCost(s.estCostUsd)}</td>
-                  <td
-                    className="text-right num"
-                    title={`Marginal: ${formatCost(s.efficiency.wastedCostUsd)}\nUpper bound (no cache): ${formatCost(s.efficiency.wastedCostUpperUsd)}`}
-                    style={{
-                      color: s.efficiency.wastedCostUsd > 0.5 ? "#ef4444" : undefined,
-                    }}
-                  >
-                    {s.efficiency.wastedCostUsd > 0
-                      ? formatCost(s.efficiency.wastedCostUsd)
-                      : "—"}
-                  </td>
-                  <td className="text-center">
-                    <EfficiencyBadge grade={s.efficiency.grade} score={s.efficiency.score} />
-                  </td>
-                  <td>
-                    <Link
-                      href={`/project/${encodeURIComponent(p.slug)}/session/${s.sessionId}`}
-                      className="font-mono text-xs"
+              {p.sessions.map((s) => {
+                const z = s.costAnomalyZ;
+                const zColor =
+                  z != null && z >= 2 ? "#ef4444" : z != null && z >= 1 ? "var(--warning)" : undefined;
+                return (
+                  <tr key={s.sessionId}>
+                    <td>{formatRelative(s.startedAt)}</td>
+                    <td className="truncate max-w-[260px]" title={s.models.join(", ")}>
+                      {s.models.join(", ") || "—"}
+                    </td>
+                    <td className="text-right">{s.turnCount}</td>
+                    <td className="text-right">{formatTokens(sumTokens(s.totalTokens))}</td>
+                    <td className="text-right">{formatCost(s.estCostUsd)}</td>
+                    <td
+                      className="text-right num"
+                      style={{ color: zColor }}
+                      title={
+                        z == null
+                          ? "Not enough sessions to compute"
+                          : `z = ${z.toFixed(2)} vs project mean`
+                      }
                     >
-                      {s.sessionId.slice(0, 8)}…
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+                      {z == null ? "—" : `${z >= 0 ? "+" : ""}${z.toFixed(1)}σ`}
+                    </td>
+                    <td
+                      className="text-right num"
+                      style={{ color: s.riskHitCount > 0 ? "var(--warning)" : undefined }}
+                      title="Risky tool calls (destructive bash / sensitive read / etc.)"
+                    >
+                      {s.riskHitCount || "—"}
+                    </td>
+                    <td
+                      className="text-right num"
+                      title={`Marginal: ${formatCost(s.efficiency.wastedCostUsd)}\nUpper bound (no cache): ${formatCost(s.efficiency.wastedCostUpperUsd)}`}
+                      style={{
+                        color: s.efficiency.wastedCostUsd > 0.5 ? "#ef4444" : undefined,
+                      }}
+                    >
+                      {s.efficiency.wastedCostUsd > 0
+                        ? formatCost(s.efficiency.wastedCostUsd)
+                        : "—"}
+                    </td>
+                    <td className="text-center">
+                      <EfficiencyBadge grade={s.efficiency.grade} score={s.efficiency.score} />
+                    </td>
+                    <td>
+                      <Link
+                        href={`/project/${encodeURIComponent(p.slug)}/session/${s.sessionId}`}
+                        className="font-mono text-xs"
+                      >
+                        {s.sessionId.slice(0, 8)}…
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

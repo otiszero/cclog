@@ -133,7 +133,7 @@ export default async function HomePage() {
           title="Top tools (global)"
           rows={g.topTools.map((t) => ({
             key: t.key,
-            count: 0,
+            count: t.count,
             tokens: { input: t.tokens, output: 0, cacheRead: 0, cacheCreate: 0 },
             estCostUsd: t.cost,
           }))}

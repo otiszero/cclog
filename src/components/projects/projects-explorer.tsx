@@ -20,6 +20,9 @@ export type ProjectRow = {
   wastedCostUpperUsd: number;
   efficiencyGrade: EfficiencyGrade;
   efficiencyScore: number;
+  hasMcp: boolean;
+  hasSkill: boolean;
+  hasSubAgent: boolean;
 };
 
 type SortKey =
@@ -272,6 +275,18 @@ export function ProjectsExplorer({
                   sortDir={sortDir}
                   onSort={onSort}
                 />
+                <th
+                  className="text-center"
+                  style={{
+                    color: "var(--foreground-muted)",
+                    fontWeight: 600,
+                    fontSize: 11,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Uses
+                </th>
                 <SortHeader
                   label="Eff."
                   k="efficiency"
@@ -312,6 +327,13 @@ export function ProjectsExplorer({
                     }}
                   >
                     {p.wastedCostUsd > 0 ? formatCost(p.wastedCostUsd) : "—"}
+                  </td>
+                  <td className="text-center">
+                    <UsesBadges
+                      hasMcp={p.hasMcp}
+                      hasSkill={p.hasSkill}
+                      hasSubAgent={p.hasSubAgent}
+                    />
                   </td>
                   <td className="text-center">
                     <EfficiencyBadge
@@ -429,6 +451,54 @@ function SortHeader({
         <span style={{ width: 10, display: "inline-block" }}>{arrow}</span>
       </button>
     </th>
+  );
+}
+
+function UsesBadges({
+  hasMcp,
+  hasSkill,
+  hasSubAgent,
+}: {
+  hasMcp: boolean;
+  hasSkill: boolean;
+  hasSubAgent: boolean;
+}) {
+  if (!hasMcp && !hasSkill && !hasSubAgent) {
+    return <span style={{ color: "var(--foreground-subtle)" }}>—</span>;
+  }
+  return (
+    <span className="inline-flex items-center gap-1 justify-center">
+      {hasMcp && <UseChip label="MCP" title="Uses MCP tools" color="#a855f7" />}
+      {hasSkill && <UseChip label="SKL" title="Uses Skills" color="#10b981" />}
+      {hasSubAgent && (
+        <UseChip label="AGT" title="Uses sub-agents" color="#3b82f6" />
+      )}
+    </span>
+  );
+}
+
+function UseChip({
+  label,
+  title,
+  color,
+}: {
+  label: string;
+  title: string;
+  color: string;
+}) {
+  return (
+    <span
+      title={title}
+      className="inline-flex items-center px-1.5 rounded-sm text-[10px] font-semibold tracking-wide"
+      style={{
+        color,
+        background: `color-mix(in oklab, ${color} 15%, transparent)`,
+        border: `1px solid color-mix(in oklab, ${color} 35%, transparent)`,
+        lineHeight: "16px",
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
