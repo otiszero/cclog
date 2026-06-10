@@ -8,3 +8,7 @@ export function claudeHome(): string {
 export function projectsDir(): string {
   return join(claudeHome(), "projects");
 }
+
+export function historyFile(): string {
+  return join(claudeHome(), "history.jsonl");
+}

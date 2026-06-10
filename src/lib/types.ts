@@ -271,3 +271,35 @@ export type HarnessRecommendation = {
   settingsJson: string;
   hookScript: string;
 };
+
+// --- Command & Workflow Analytics (history.jsonl) ---------------------------
+// Sourced from ~/.claude/history.jsonl — every prompt + slash command typed.
+// The only behavioral/workflow data source in the app.
+
+export type HistoryEntryKind = "command" | "prompt";
+
+export type HistoryEntry = {
+  ts: number; // epoch ms
+  kind: HistoryEntryKind;
+  display: string;
+  command?: string; // first token when kind === "command", e.g. "/ck:cook"
+  namespace?: string; // part between leading "/" and ":" — "ck"; undefined for builtins
+  projectPath: string; // full cwd as stored
+  projectSlug: string; // every non-alphanumeric → "-" (Claude's flat-encode); see encode-project-path.ts
+  sessionId: string;
+  hasPaste: boolean;
+  promptChars: number; // display length + summed paste content length
+};
+
+export type ActivityStats = {
+  totalEntries: number;
+  commandCount: number;
+  promptCount: number;
+  skipped: number; // malformed lines skipped during parse
+  dateRange: { from: number; to: number };
+  commandLeaderboard: { command: string; count: number; namespace?: string }[];
+  heatmap: number[][]; // [7 weekdays, 0=Sun][24 hours] counts (local time)
+  perProject: { slug: string; path: string; total: number; topCommand?: string }[];
+  perProjectTruncated: number; // projects omitted beyond the display cap
+  clearCadence: { clears: number; avgEntriesBetweenClears: number };
+};

@@ -41,6 +41,15 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/activity",
+    label: "Activity",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M3 12h4l3 8 4-16 3 8h4" />
+      </svg>
+    ),
+  },
+  {
     href: "/search",
     label: "Search",
     icon: (
