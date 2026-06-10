@@ -3,6 +3,8 @@ import { aggregateProject } from "@/lib/parser/aggregate-project";
 import { KpiCard } from "@/components/common/kpi-card";
 import { LeaderboardCard } from "@/components/project/leaderboard-card";
 import { HarnessPanel } from "@/components/project/harness-panel";
+import { StartupContextPanel } from "@/components/project/startup-context-panel";
+import { aggregateStartupContext } from "@/lib/parser/aggregate-startup-context";
 import { UsageTrendChart } from "@/components/global/usage-trend-chart";
 import { EfficiencyBadge } from "@/components/session/efficiency-card";
 import { formatCost, formatRelative, formatTokens } from "@/lib/format";
@@ -18,6 +20,7 @@ export default async function ProjectPage({
   const { slug } = await params;
   const decoded = decodeURIComponent(slug);
   const p = await aggregateProject(decoded);
+  const startupContext = await aggregateStartupContext(decoded, p.realPath);
 
   return (
     <div className="flex flex-col gap-6">
@@ -81,6 +84,8 @@ export default async function ProjectPage({
       </section>
 
       <HarnessPanel report={p.harness} />
+
+      <StartupContextPanel context={startupContext} />
 
       <section className="card">
         <h3 className="text-sm font-semibold mb-3">Sessions</h3>

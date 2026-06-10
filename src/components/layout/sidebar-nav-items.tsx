@@ -50,6 +50,15 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/context",
+    label: "Context",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 5h16M4 5v14M4 19h16M8 9h8M8 13h5" />
+      </svg>
+    ),
+  },
+  {
     href: "/search",
     label: "Search",
     icon: (

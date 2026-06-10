@@ -303,3 +303,45 @@ export type ActivityStats = {
   perProjectTruncated: number; // projects omitted beyond the display cap
   clearCadence: { clears: number; avgEntriesBetweenClears: number };
 };
+
+// --- Startup Context (CLAUDE.md + rules + memory injected at session start) ---
+// Reconstructed from disk: the transcripts don't log the injected system prompt,
+// so this reflects CURRENT file state, not a historical per-session snapshot.
+// global-* sources are shared across every project; project-* are per-project.
+
+export type InjectedCategory =
+  | "global-instructions" // ~/.claude/CLAUDE.md
+  | "global-rules" // ~/.claude/rules/*.md (harness auto-injects)
+  | "global-memory" // ~/.claude/memory/*.md
+  | "project-instructions" // <project>/CLAUDE.md (+ CLAUDE.local.md)
+  | "project-memory"; // ~/.claude/projects/<slug>/memory/*.md
+
+export type InjectedSource = {
+  category: InjectedCategory;
+  label: string; // display name, e.g. "rules/primary-workflow.md"
+  path: string; // absolute path on disk
+  scope: "global" | "project";
+  chars: number;
+  estTokens: number; // chars / 4 — same convention as hook estTokens
+  content: string; // full file content
+};
+
+export type StartupContext = {
+  slug: string;
+  realPath: string;
+  sources: InjectedSource[];
+  totalChars: number;
+  totalTokens: number;
+  sharedTokens: number; // Σ global-* (identical for every project)
+  projectTokens: number; // Σ project-* (this project only)
+};
+
+export type StartupContextSummary = {
+  sharedTokens: number; // computed once: all global-* sources
+  projects: {
+    slug: string;
+    realPath: string;
+    totalTokens: number;
+    projectTokens: number;
+  }[];
+};
