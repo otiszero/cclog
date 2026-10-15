@@ -229,6 +229,30 @@ export type BloatDetail = {
   wastedCostUpperUsd: number; // priced as fresh input across (turnsAfter + 1)
 };
 
+// --- Bookmarks --------------------------------------------------------------
+// User-pinned sessions, persisted to ~/.claude/cclog/bookmarks.json.
+// Keyed by projectSlug + sessionId (the /project/[slug]/session/[id] route).
+
+export type Bookmark = {
+  slug: string; // project slug
+  sessionId: string;
+  label?: string; // optional user note; reserved, no edit UI yet
+  createdAt: string; // ISO timestamp
+};
+
+// A bookmark joined with resolved session metadata for the /bookmarks list.
+// meta is null when the underlying session file no longer exists (stale bookmark).
+export type BookmarkedSession = {
+  bookmark: Bookmark;
+  realPath: string; // decoded project cwd
+  meta: {
+    startedAt?: string;
+    tokens: number;
+    estCostUsd: number;
+    models: string[];
+  } | null;
+};
+
 export type LeaderboardRow = {
   key: string;
   count: number;
@@ -270,4 +294,78 @@ export type HarnessRecommendation = {
   // Two snippet flavours, ready to copy
   settingsJson: string;
   hookScript: string;
+};
+
+// --- Command & Workflow Analytics (history.jsonl) ---------------------------
+// Sourced from ~/.claude/history.jsonl — every prompt + slash command typed.
+// The only behavioral/workflow data source in the app.
+
+export type HistoryEntryKind = "command" | "prompt";
+
+export type HistoryEntry = {
+  ts: number; // epoch ms
+  kind: HistoryEntryKind;
+  display: string;
+  command?: string; // first token when kind === "command", e.g. "/ck:cook"
+  namespace?: string; // part between leading "/" and ":" — "ck"; undefined for builtins
+  projectPath: string; // full cwd as stored
+  projectSlug: string; // every non-alphanumeric → "-" (Claude's flat-encode); see encode-project-path.ts
+  sessionId: string;
+  hasPaste: boolean;
+  promptChars: number; // display length + summed paste content length
+};
+
+export type ActivityStats = {
+  totalEntries: number;
+  commandCount: number;
+  promptCount: number;
+  skipped: number; // malformed lines skipped during parse
+  dateRange: { from: number; to: number };
+  commandLeaderboard: { command: string; count: number; namespace?: string }[];
+  heatmap: number[][]; // [7 weekdays, 0=Sun][24 hours] counts (local time)
+  perProject: { slug: string; path: string; total: number; topCommand?: string }[];
+  perProjectTruncated: number; // projects omitted beyond the display cap
+  clearCadence: { clears: number; avgEntriesBetweenClears: number };
+};
+
+// --- Startup Context (CLAUDE.md + rules + memory injected at session start) ---
+// Reconstructed from disk: the transcripts don't log the injected system prompt,
+// so this reflects CURRENT file state, not a historical per-session snapshot.
+// global-* sources are shared across every project; project-* are per-project.
+
+export type InjectedCategory =
+  | "global-instructions" // ~/.claude/CLAUDE.md
+  | "global-rules" // ~/.claude/rules/*.md (harness auto-injects)
+  | "global-memory" // ~/.claude/memory/*.md
+  | "project-instructions" // <project>/CLAUDE.md (+ CLAUDE.local.md)
+  | "project-memory"; // ~/.claude/projects/<slug>/memory/*.md
+
+export type InjectedSource = {
+  category: InjectedCategory;
+  label: string; // display name, e.g. "rules/primary-workflow.md"
+  path: string; // absolute path on disk
+  scope: "global" | "project";
+  chars: number;
+  estTokens: number; // chars / 4 — same convention as hook estTokens
+  content: string; // full file content
+};
+
+export type StartupContext = {
+  slug: string;
+  realPath: string;
+  sources: InjectedSource[];
+  totalChars: number;
+  totalTokens: number;
+  sharedTokens: number; // Σ global-* (identical for every project)
+  projectTokens: number; // Σ project-* (this project only)
+};
+
+export type StartupContextSummary = {
+  sharedTokens: number; // computed once: all global-* sources
+  projects: {
+    slug: string;
+    realPath: string;
+    totalTokens: number;
+    projectTokens: number;
+  }[];
 };

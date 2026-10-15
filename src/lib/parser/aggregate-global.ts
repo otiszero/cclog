@@ -17,7 +17,7 @@ export type GlobalSummary = {
   topProjects: ProjectSummary[];
   allProjects: ProjectSummary[];
   daily: { date: string; tokens: number; cost: number }[];
-  topTools: { key: string; tokens: number; cost: number }[];
+  topTools: { key: string; count: number; tokens: number; cost: number }[];
 };
 
 export async function aggregateGlobal(): Promise<GlobalSummary> {
@@ -37,7 +37,7 @@ export async function aggregateGlobal(): Promise<GlobalSummary> {
   let sessionCount = 0;
   const modelMap = new Map<string, { tokens: number; cost: number }>();
   const dailyMap = new Map<string, { tokens: number; cost: number }>();
-  const toolMap = new Map<string, { tokens: number; cost: number }>();
+  const toolMap = new Map<string, { count: number; tokens: number; cost: number }>();
 
   for (const s of summaries) {
     lifetime = addUsage(lifetime, s.lifetimeTokens);
@@ -58,7 +58,8 @@ export async function aggregateGlobal(): Promise<GlobalSummary> {
       dailyMap.set(d.date, cur);
     }
     for (const row of s.byTool) {
-      const cur = toolMap.get(row.key) ?? { tokens: 0, cost: 0 };
+      const cur = toolMap.get(row.key) ?? { count: 0, tokens: 0, cost: 0 };
+      cur.count += row.count;
       cur.tokens += sumTokens(row.tokens);
       cur.cost += row.estCostUsd;
       toolMap.set(row.key, cur);
@@ -86,7 +87,7 @@ export async function aggregateGlobal(): Promise<GlobalSummary> {
       .slice(-30),
     topTools: [...toolMap.entries()]
       .map(([key, v]) => ({ key, ...v }))
-      .sort((a, b) => b.tokens - a.tokens)
+      .sort((a, b) => b.count - a.count)
       .slice(0, 10),
   };
   cached = { at: Date.now(), data };

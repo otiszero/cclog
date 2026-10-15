@@ -62,6 +62,7 @@ Claude flat-encodes cwd (slashes → dashes) into the project dir name. `decode-
 | `/project/[slug]` | `aggregate-project` | usage chart, leaderboards |
 | `/project/[slug]/session/[id]` | `getParsedSession` | timeline tabs, expand rows, prompt viewer |
 | `/search` | `build-prompt-index` | Fuse.js client search |
+| `/bookmarks` | `readBookmarks` + `getParsedSession` | star toggle (server action) |
 
 ## Session detail (timeline tab)
 Composition:

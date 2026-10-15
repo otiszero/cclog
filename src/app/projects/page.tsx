@@ -37,6 +37,9 @@ export default async function ProjectsPage() {
       wastedCostUpperUsd: p.efficiency.wastedCostUpperUsd,
       efficiencyGrade: p.efficiency.grade,
       efficiencyScore: p.efficiency.score,
+      hasMcp: p.byMcp.length > 0,
+      hasSkill: p.bySkill.length > 0,
+      hasSubAgent: p.bySubAgent.length > 0,
     };
   });
 

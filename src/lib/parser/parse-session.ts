@@ -153,8 +153,30 @@ export async function parseSession(
             events.push({ kind: "system", ts: ts ?? "", subtype: String(entry.subtype) });
           }
           break;
+        case "attachment": {
+          // Harness telemetry: PreToolUse/PostToolUse/SessionStart/UserPromptSubmit hooks.
+          // Other attachment.type (skill_listing, command_permissions, *_delta…) are
+          // framework chatter we still ignore.
+          const a = entry.attachment;
+          if (!a) break;
+          const atype = a.type;
+          if (atype !== "hook_success" && atype !== "hook_additional_context") break;
+          const content =
+            typeof a.content === "string" ? a.content : safeJson(a.content);
+          events.push({
+            kind: "hook",
+            ts: ts ?? "",
+            hookEvent: typeof a.hookEvent === "string" ? a.hookEvent : "",
+            hookName: typeof a.hookName === "string" ? a.hookName : "",
+            toolUseId: typeof a.toolUseID === "string" ? a.toolUseID : undefined,
+            contentKind: atype === "hook_success" ? "success" : "additional_context",
+            content,
+            estTokens: Math.round(content.length / 4),
+          });
+          break;
+        }
         default:
-          // ignore attachment, permission-mode, file-history-snapshot, etc.
+          // ignore permission-mode, file-history-snapshot, ai-title, last-prompt, etc.
           break;
       }
     } catch {
@@ -185,6 +207,15 @@ function stringifyPreview(content: unknown): string {
 const FULL_CAP = 200_000;
 function stringifyFull(content: unknown): string {
   return stringifyContent(content).slice(0, FULL_CAP);
+}
+
+function safeJson(content: unknown): string {
+  if (content == null) return "";
+  try {
+    return JSON.stringify(content);
+  } catch {
+    return "";
+  }
 }
 
 function stringifyContent(content: unknown): string {

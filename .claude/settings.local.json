@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm lint *)",
+      "Bash(pnpm build *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "WebSearch",
+      "Bash(kill 32065 *)",
+      "Bash(npx tsc *)",
+      "Bash(git stash *)",
+      "Bash(pnpm dev *)",
+      "Bash(ck --version)"
+    ]
+  }
+}

@@ -2,10 +2,15 @@ import Link from "next/link";
 import { aggregateProject } from "@/lib/parser/aggregate-project";
 import { KpiCard } from "@/components/common/kpi-card";
 import { LeaderboardCard } from "@/components/project/leaderboard-card";
+import { HarnessPanel } from "@/components/project/harness-panel";
+import { StartupContextPanel } from "@/components/project/startup-context-panel";
+import { aggregateStartupContext } from "@/lib/parser/aggregate-startup-context";
 import { UsageTrendChart } from "@/components/global/usage-trend-chart";
 import { EfficiencyBadge } from "@/components/session/efficiency-card";
 import { formatCost, formatRelative, formatTokens } from "@/lib/format";
 import { sumTokens } from "@/lib/parser/derive-metrics";
+import { BookmarkToggle } from "@/components/session/bookmark-toggle";
+import { readBookmarks } from "@/lib/bookmarks/bookmarks-store";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +22,11 @@ export default async function ProjectPage({
   const { slug } = await params;
   const decoded = decodeURIComponent(slug);
   const p = await aggregateProject(decoded);
+  const startupContext = await aggregateStartupContext(decoded, p.realPath);
+  // Read bookmarks once, then O(1) lookup per row (avoids one file read per session).
+  const bookmarkedIds = new Set(
+    (await readBookmarks()).filter((b) => b.slug === decoded).map((b) => b.sessionId),
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -79,6 +89,10 @@ export default async function ProjectPage({
         />
       </section>
 
+      <HarnessPanel report={p.harness} />
+
+      <StartupContextPanel context={startupContext} />
+
       <section className="card">
         <h3 className="text-sm font-semibold mb-3">Sessions</h3>
         {p.sessions.length === 0 ? (
@@ -87,50 +101,84 @@ export default async function ProjectPage({
           <table className="data">
             <thead>
               <tr>
+                <th aria-label="Bookmark" className="w-8" />
                 <th>Started</th>
                 <th>Models</th>
                 <th className="text-right">Turns</th>
                 <th className="text-right">Tokens</th>
                 <th className="text-right">Cost</th>
+                <th className="text-right" title="z-score of cost vs project mean">Anom.</th>
+                <th className="text-right" title="Risky tool calls">Risk</th>
                 <th className="text-right">Wasted</th>
                 <th className="text-center">Eff.</th>
                 <th>Session</th>
               </tr>
             </thead>
             <tbody>
-              {p.sessions.map((s) => (
-                <tr key={s.sessionId}>
-                  <td>{formatRelative(s.startedAt)}</td>
-                  <td className="truncate max-w-[260px]" title={s.models.join(", ")}>
-                    {s.models.join(", ") || "—"}
-                  </td>
-                  <td className="text-right">{s.turnCount}</td>
-                  <td className="text-right">{formatTokens(sumTokens(s.totalTokens))}</td>
-                  <td className="text-right">{formatCost(s.estCostUsd)}</td>
-                  <td
-                    className="text-right num"
-                    title={`Marginal: ${formatCost(s.efficiency.wastedCostUsd)}\nUpper bound (no cache): ${formatCost(s.efficiency.wastedCostUpperUsd)}`}
-                    style={{
-                      color: s.efficiency.wastedCostUsd > 0.5 ? "#ef4444" : undefined,
-                    }}
-                  >
-                    {s.efficiency.wastedCostUsd > 0
-                      ? formatCost(s.efficiency.wastedCostUsd)
-                      : "—"}
-                  </td>
-                  <td className="text-center">
-                    <EfficiencyBadge grade={s.efficiency.grade} score={s.efficiency.score} />
-                  </td>
-                  <td>
-                    <Link
-                      href={`/project/${encodeURIComponent(p.slug)}/session/${s.sessionId}`}
-                      className="font-mono text-xs"
+              {p.sessions.map((s) => {
+                const z = s.costAnomalyZ;
+                const zColor =
+                  z != null && z >= 2 ? "#ef4444" : z != null && z >= 1 ? "var(--warning)" : undefined;
+                return (
+                  <tr key={s.sessionId}>
+                    <td className="text-center">
+                      <BookmarkToggle
+                        slug={p.slug}
+                        sessionId={s.sessionId}
+                        initialBookmarked={bookmarkedIds.has(s.sessionId)}
+                        size={16}
+                      />
+                    </td>
+                    <td>{formatRelative(s.startedAt)}</td>
+                    <td className="truncate max-w-[260px]" title={s.models.join(", ")}>
+                      {s.models.join(", ") || "—"}
+                    </td>
+                    <td className="text-right">{s.turnCount}</td>
+                    <td className="text-right">{formatTokens(sumTokens(s.totalTokens))}</td>
+                    <td className="text-right">{formatCost(s.estCostUsd)}</td>
+                    <td
+                      className="text-right num"
+                      style={{ color: zColor }}
+                      title={
+                        z == null
+                          ? "Not enough sessions to compute"
+                          : `z = ${z.toFixed(2)} vs project mean`
+                      }
                     >
-                      {s.sessionId.slice(0, 8)}…
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+                      {z == null ? "—" : `${z >= 0 ? "+" : ""}${z.toFixed(1)}σ`}
+                    </td>
+                    <td
+                      className="text-right num"
+                      style={{ color: s.riskHitCount > 0 ? "var(--warning)" : undefined }}
+                      title="Risky tool calls (destructive bash / sensitive read / etc.)"
+                    >
+                      {s.riskHitCount || "—"}
+                    </td>
+                    <td
+                      className="text-right num"
+                      title={`Marginal: ${formatCost(s.efficiency.wastedCostUsd)}\nUpper bound (no cache): ${formatCost(s.efficiency.wastedCostUpperUsd)}`}
+                      style={{
+                        color: s.efficiency.wastedCostUsd > 0.5 ? "#ef4444" : undefined,
+                      }}
+                    >
+                      {s.efficiency.wastedCostUsd > 0
+                        ? formatCost(s.efficiency.wastedCostUsd)
+                        : "—"}
+                    </td>
+                    <td className="text-center">
+                      <EfficiencyBadge grade={s.efficiency.grade} score={s.efficiency.score} />
+                    </td>
+                    <td>
+                      <Link
+                        href={`/project/${encodeURIComponent(p.slug)}/session/${s.sessionId}`}
+                        className="font-mono text-xs"
+                      >
+                        {s.sessionId.slice(0, 8)}…
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

@@ -8,3 +8,30 @@ export function claudeHome(): string {
 export function projectsDir(): string {
   return join(claudeHome(), "projects");
 }
+
+export function historyFile(): string {
+  return join(claudeHome(), "history.jsonl");
+}
+
+export function rulesDir(): string {
+  return join(claudeHome(), "rules");
+}
+
+export function globalMemoryDir(): string {
+  return join(claudeHome(), "memory");
+}
+
+// The new per-project memory system stores files under projects/<slug>/memory/.
+export function projectMemoryDir(slug: string): string {
+  return join(projectsDir(), slug, "memory");
+}
+
+// cclog's own writable data lives here (bookmarks, etc.) — kept out of Claude's
+// projects/ tree so it never collides with session logs.
+export function cclogDataDir(): string {
+  return join(claudeHome(), "cclog");
+}
+
+export function bookmarksFile(): string {
+  return join(cclogDataDir(), "bookmarks.json");
+}

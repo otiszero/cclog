@@ -44,6 +44,7 @@ Treat these as a closed set; adding a new bucket means updating the union in `li
 - `/project/[slug]` — project totals, leaderboards, session list
 - `/project/[slug]/session/[id]` — timeline waterfall, per-turn token bars, prompt/response viewer
 - `/search` — cross-session prompt full-text search
+- `/bookmarks` — pinned sessions; toggle stars stored in `~/.claude/cclog/bookmarks.json`
 
 ## Conventions
 

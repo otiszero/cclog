@@ -41,12 +41,39 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/activity",
+    label: "Activity",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M3 12h4l3 8 4-16 3 8h4" />
+      </svg>
+    ),
+  },
+  {
+    href: "/context",
+    label: "Context",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M4 5h16M4 5v14M4 19h16M8 9h8M8 13h5" />
+      </svg>
+    ),
+  },
+  {
     href: "/search",
     label: "Search",
     icon: (
       <svg {...iconProps}>
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
+      </svg>
+    ),
+  },
+  {
+    href: "/bookmarks",
+    label: "Bookmarks",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" />
       </svg>
     ),
   },

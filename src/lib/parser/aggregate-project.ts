@@ -19,6 +19,8 @@ import {
   totalTokens,
 } from "./derive-metrics";
 import { aggregateEfficiency, deriveEfficiency } from "./derive-efficiency";
+import { riskHitsForSession } from "./risk-tags";
+import { deriveHarness } from "./derive-harness";
 
 const ZERO: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
 const cache = new Map<string, { mtime: number; summary: ProjectSummary }>();
@@ -41,6 +43,7 @@ export async function aggregateProject(slug: string): Promise<ProjectSummary> {
   let cost = 0;
   let lastActive: string | undefined;
   const sessions: SessionMeta[] = [];
+  const parsedSessions: import("@/lib/types").ParsedSession[] = [];
   const toolGroup = new Map<string, LeaderboardRow>();
   const mcpGroup = new Map<string, LeaderboardRow>();
   const skillGroup = new Map<string, LeaderboardRow>();
@@ -66,7 +69,16 @@ export async function aggregateProject(slug: string): Promise<ProjectSummary> {
     cost += sessionCost;
     if (parsed.endedAt && (!lastActive || parsed.endedAt > lastActive)) lastActive = parsed.endedAt;
 
+    parsedSessions.push(parsed);
     const efficiency = deriveEfficiency(parsed);
+    const riskHits = riskHitsForSession(parsed);
+    let hookFireCount = 0;
+    let hookContextTokens = 0;
+    for (const e of parsed.events) {
+      if (e.kind !== "hook") continue;
+      hookFireCount += 1;
+      if (e.contentKind === "additional_context") hookContextTokens += e.estTokens;
+    }
     sessions.push({
       sessionId: parsed.sessionId,
       filePath: parsed.filePath,
@@ -79,6 +91,10 @@ export async function aggregateProject(slug: string): Promise<ProjectSummary> {
       estCostUsd: sessionCost,
       fileBytes: st.size,
       efficiency,
+      costAnomalyZ: null, // filled below once we know μ/σ
+      riskHitCount: riskHits.length,
+      hookFireCount,
+      hookContextTokens,
     });
 
     mergeLeaderboard(toolGroup, leaderboardByCategory(parsed, "tool"));
@@ -93,6 +109,20 @@ export async function aggregateProject(slug: string): Promise<ProjectSummary> {
       cur.tokens += sumTokens(tokens);
       cur.cost += sessionCost;
       daily.set(date, cur);
+    }
+  }
+
+  // Cost anomaly: z-score within this project's session population.
+  // Requires ≥4 sessions and non-zero std dev; null otherwise.
+  if (sessions.length >= 4) {
+    const costs = sessions.map((s) => s.estCostUsd);
+    const mean = costs.reduce((a, b) => a + b, 0) / costs.length;
+    const variance = costs.reduce((a, b) => a + (b - mean) ** 2, 0) / costs.length;
+    const std = Math.sqrt(variance);
+    if (std > 0) {
+      for (const s of sessions) {
+        s.costAnomalyZ = (s.estCostUsd - mean) / std;
+      }
     }
   }
 
@@ -118,6 +148,7 @@ export async function aggregateProject(slug: string): Promise<ProjectSummary> {
         weight: sumTokens(s.totalTokens),
       })),
     ),
+    harness: deriveHarness(parsedSessions),
   };
 
   cache.set(slug, { mtime: newestMtime, summary });
