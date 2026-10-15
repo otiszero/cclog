@@ -68,6 +68,15 @@ export const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    href: "/bookmarks",
+    label: "Bookmarks",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" />
+      </svg>
+    ),
+  },
 ];
 
 export function isActive(pathname: string, href: string): boolean {

@@ -16,6 +16,8 @@ import { deriveEfficiency } from "@/lib/parser/derive-efficiency";
 import { KpiCard } from "@/components/common/kpi-card";
 import { EfficiencyCard } from "@/components/session/efficiency-card";
 import { SessionTabs } from "@/components/session/session-tabs";
+import { BookmarkToggle } from "@/components/session/bookmark-toggle";
+import { isBookmarked } from "@/lib/bookmarks/bookmarks-store";
 import { formatCost, formatDuration, formatRelative, formatTokens } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +53,7 @@ export default async function SessionPage({
   const bySkill = leaderboardByCategory(parsed, "skill");
   const bySubAgent = leaderboardByCategory(parsed, "sub_agent");
   const projectRealPath = (await readProjectCwd(decodedSlug)) ?? decodeProjectSlug(decodedSlug);
+  const bookmarked = await isBookmarked(decodedSlug, id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -62,7 +65,10 @@ export default async function SessionPage({
         >
           ← {projectRealPath}
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight mt-1 font-mono">{id}</h1>
+        <div className="flex items-center gap-2 mt-1">
+          <h1 className="text-2xl font-semibold tracking-tight font-mono">{id}</h1>
+          <BookmarkToggle slug={decodedSlug} sessionId={id} initialBookmarked={bookmarked} size={20} />
+        </div>
         <p className="text-xs" style={{ color: "var(--muted)" }}>
           {turnCount} turns · {models.join(", ")} · started{" "}
           {formatRelative(parsed.startedAt)}

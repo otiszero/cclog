@@ -25,3 +25,13 @@ export function globalMemoryDir(): string {
 export function projectMemoryDir(slug: string): string {
   return join(projectsDir(), slug, "memory");
 }
+
+// cclog's own writable data lives here (bookmarks, etc.) — kept out of Claude's
+// projects/ tree so it never collides with session logs.
+export function cclogDataDir(): string {
+  return join(claudeHome(), "cclog");
+}
+
+export function bookmarksFile(): string {
+  return join(cclogDataDir(), "bookmarks.json");
+}

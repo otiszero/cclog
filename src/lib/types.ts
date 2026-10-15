@@ -229,6 +229,30 @@ export type BloatDetail = {
   wastedCostUpperUsd: number; // priced as fresh input across (turnsAfter + 1)
 };
 
+// --- Bookmarks --------------------------------------------------------------
+// User-pinned sessions, persisted to ~/.claude/cclog/bookmarks.json.
+// Keyed by projectSlug + sessionId (the /project/[slug]/session/[id] route).
+
+export type Bookmark = {
+  slug: string; // project slug
+  sessionId: string;
+  label?: string; // optional user note; reserved, no edit UI yet
+  createdAt: string; // ISO timestamp
+};
+
+// A bookmark joined with resolved session metadata for the /bookmarks list.
+// meta is null when the underlying session file no longer exists (stale bookmark).
+export type BookmarkedSession = {
+  bookmark: Bookmark;
+  realPath: string; // decoded project cwd
+  meta: {
+    startedAt?: string;
+    tokens: number;
+    estCostUsd: number;
+    models: string[];
+  } | null;
+};
+
 export type LeaderboardRow = {
   key: string;
   count: number;

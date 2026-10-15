@@ -9,6 +9,8 @@ import { UsageTrendChart } from "@/components/global/usage-trend-chart";
 import { EfficiencyBadge } from "@/components/session/efficiency-card";
 import { formatCost, formatRelative, formatTokens } from "@/lib/format";
 import { sumTokens } from "@/lib/parser/derive-metrics";
+import { BookmarkToggle } from "@/components/session/bookmark-toggle";
+import { readBookmarks } from "@/lib/bookmarks/bookmarks-store";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,10 @@ export default async function ProjectPage({
   const decoded = decodeURIComponent(slug);
   const p = await aggregateProject(decoded);
   const startupContext = await aggregateStartupContext(decoded, p.realPath);
+  // Read bookmarks once, then O(1) lookup per row (avoids one file read per session).
+  const bookmarkedIds = new Set(
+    (await readBookmarks()).filter((b) => b.slug === decoded).map((b) => b.sessionId),
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -95,6 +101,7 @@ export default async function ProjectPage({
           <table className="data">
             <thead>
               <tr>
+                <th aria-label="Bookmark" className="w-8" />
                 <th>Started</th>
                 <th>Models</th>
                 <th className="text-right">Turns</th>
@@ -114,6 +121,14 @@ export default async function ProjectPage({
                   z != null && z >= 2 ? "#ef4444" : z != null && z >= 1 ? "var(--warning)" : undefined;
                 return (
                   <tr key={s.sessionId}>
+                    <td className="text-center">
+                      <BookmarkToggle
+                        slug={p.slug}
+                        sessionId={s.sessionId}
+                        initialBookmarked={bookmarkedIds.has(s.sessionId)}
+                        size={16}
+                      />
+                    </td>
                     <td>{formatRelative(s.startedAt)}</td>
                     <td className="truncate max-w-[260px]" title={s.models.join(", ")}>
                       {s.models.join(", ") || "—"}
